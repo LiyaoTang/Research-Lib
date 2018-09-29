@@ -160,6 +160,29 @@ class TF_CSV_Feeder(TF_Feeder):
         return tf.contrib.data.CsvDataset(filenames=self.filenames, record_defaults=self.record_defaults, header=self.header, select_cols=self.select_cols)
 
 
+class TF_TXT_Feeder(TF_Feeder):
+    '''
+    base class to construct tf.data pipeline to read, parse & feed txt data
+    '''
+    def __init__(self, data_path, recursive=True, re_expr='.*', header=False):
+        super(TF_TXT_Feeder, self).__init__(data_path)
+        self.traverser = File_Traverser(data_path, re_expr)  # treat data path as dir
+        self.header = header
+
+        if recursive:
+            self.filenames = [path for path in self.traverser.traverse_file_path()]
+        else:
+            self.filenames = [self.data_path]
+
+    def _parse_txt_file(self, filename):
+        raise NotImplementedError
+
+    def _get_dataset(self):            
+        dataset = tf.data.Dataset.from_tensor_slices(self.filenames)
+        dataset = dataset.map(self._parse_txt_file)
+        return dataset
+
+
 class Gen_Feeder(object):
     '''
     base class to feed from a data dir
