@@ -58,11 +58,14 @@ class Mertic_Record(object):
         self.label_flat.extend(cur_label_flat)
         self.loss_list.append(loss)
 
+        assert len(self.pred_flat) == len(self.label_flat)
+
     def _cal_statistics(self):
         average_precision = dict()
         auc_score = dict()
         balanced_acc = dict()
-        stat_matrix = np.zeros(shape=(self.class_num, self.class_num), dtype=int)
+        max_pred_matrix = np.zeros(shape=(self.class_num, self.class_num), dtype=int)
+        mean_prop_matrix = np.zeros(shape=(self.class_num, self.class_num), dtype=int)
 
         for i in range(self.class_num):
             cur_pred_flat = np.array(self.pred_flat)[:, i]
@@ -75,16 +78,19 @@ class Mertic_Record(object):
         self.avg_precision = average_precision
         self.auc_score = auc_score
         self.balanced_acc = balanced_acc
-
         self.mean_loss = sum(self.loss_list) / len(self.loss_list)
 
-        class_pred = np.argmax(self.pred_flat, axis=-1)
-        class_label = np.argmax(self.label_flat, axis=-1)
+        pred_class = np.argmax(self.pred_flat, axis=-1)
+        label_class = np.argmax(self.label_flat, axis=-1)
 
-        self.balanced_acc_overall = skmt.balanced_accuracy_score(y_pred=class_pred, y_true=class_label)
-        for i, j in zip(class_label, class_pred):
-            stat_matrix[i, j] += 1
-        self.stat_matrix = stat_matrix
+        self.balanced_acc_overall = skmt.balanced_accuracy_score(y_pred=pred_class, y_true=label_class)
+
+        # calculate statistical matrix for prediction & prob
+        for i, j, cur_pred_prob in zip(label_class, pred_class, self.pred_flat):
+            max_pred_matrix[i, j] += 1
+            mean_prop_matrix[i] = mean_prop_matrix[i] + cur_pred_prob
+        self.max_pred_matrix = max_pred_matrix
+        self.mean_prop_matrix = mean_prop_matrix / len(self.pred_flat)
 
     def _cal_curve(self):
         fpr = dict()
@@ -168,10 +174,16 @@ class Mertic_Record(object):
               "\nauc = ", [self.class_name[k] + ' : ' + str(v) for k, v in self.auc_score.items()],
               "\navg_precision = ", [self.class_name[k] + ' : ' + str(v) for k, v in self.avg_precision.items()])
 
-        print('stat matrix:')
+        print('max pred matrix:')
         print('\t' + '\t'.join([self.class_name[i] for i in range(self.class_num)]))
         for i in range(self.class_num):
-            print(self.class_name[i] + '\t' + '\t'.join([str(cnt) for cnt in self.stat_matrix[i]]))
+            print(self.class_name[i] + '\t' + '\t'.join([str(cnt) for cnt in self.max_pred_matrix[i]]))
+        
+        print('mean prop matrix:')
+        print('\t' + '\t'.join([self.class_name[i] for i in range(self.class_num)]))
+        for i in range(self.class_num):
+            print(self.class_name[i] + '\t' + '\t'.join([str(prob) for prob in self.mean_prop_matrix[i]]))
+
         sys.stdout.flush()
 
     def plot_cur_epoch_curve(self, show=False, save_path=None, model_name=''):
@@ -205,6 +217,7 @@ class Mertic_Record(object):
         if show:
             plt.show()
         plt.close()
+
 
 class TF_Metric_Record(Mertic_Record):
     '''
@@ -251,6 +264,7 @@ class TF_Metric_Record(Mertic_Record):
             pass
 
         self._cal_statistics()
+
 
 class General_Mertic_Record(Mertic_Record):
     '''

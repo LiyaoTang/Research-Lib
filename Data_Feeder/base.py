@@ -157,7 +157,10 @@ class TF_CSV_Feeder(TF_Feeder):
             self.filenames = [self.data_path]
 
     def _get_dataset(self):
-        return tf.contrib.data.CsvDataset(filenames=self.filenames, record_defaults=self.record_defaults, header=self.header, select_cols=self.select_cols)
+        return tf.contrib.data.CsvDataset(filenames=self.filenames,
+                                          record_defaults=self.record_defaults,
+                                          header=self.header,
+                                          select_cols=self.select_cols)
 
 
 class TF_TXT_Feeder(TF_Feeder):
