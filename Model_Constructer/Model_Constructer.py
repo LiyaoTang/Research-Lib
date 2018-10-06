@@ -26,15 +26,16 @@ class Cross_Val_Trainer(object):
 
         if verbose: print('using', str(self.fold_num) + '-fold', 'corss validation, with fold size of', str(fold_size))
 
+        print(all_input.shape[0])
         index_mask = np.arange(all_input.shape[0])
         np.random.shuffle(index_mask)
 
-        for start_idx in range(self.fold_num):
-            if verbose: print('fold', str(start_idx))
+        for cnt in range(self.fold_num):
+            if verbose: print('\nfold', str(cnt))
 
             # calculate idx for validation fold
-            start_idx = start_idx * fold_size
-            end_idx = ((start_idx + 1) * fold_size)
+            start_idx = cnt * fold_size
+            end_idx = ((cnt + 1) * fold_size)
 
             if start_idx == 0: # first fold
                 train_mask = index_mask[end_idx:]
@@ -42,8 +43,8 @@ class Cross_Val_Trainer(object):
             elif end_idx >= len(all_input): # last fold (val might be smaller)
                 train_mask = index_mask[:start_idx]
                 val_mask = index_mask[start_idx:]
-            else: # folds in-between
-                train_mask = np.concatenate(index_mask[:start_idx], index_mask[end_idx:])
+            else:  # folds in-between
+                train_mask = np.concatenate([index_mask[:start_idx], index_mask[end_idx:]])
                 val_mask = index_mask[start_idx:end_idx]
 
             train_fold = {'input': all_input[train_mask], 'label': all_label[train_mask]}
