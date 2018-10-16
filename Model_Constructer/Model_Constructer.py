@@ -26,7 +26,6 @@ class Cross_Val_Trainer(object):
 
         if verbose: print('using', str(self.fold_num) + '-fold', 'corss validation, with fold size of', str(fold_size))
 
-        print(all_input.shape[0])
         index_mask = np.arange(all_input.shape[0])
         np.random.shuffle(index_mask)
 

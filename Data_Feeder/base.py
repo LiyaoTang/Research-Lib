@@ -17,7 +17,7 @@ class File_Traverser(object):
     def __init__(self, data_dir, re_expr='.*'):
         self.data_dir = data_dir
         self.re_checker = re.compile(re_expr)
-        self.chk_re_expr = lambda x: bool(self.re_checker.match(x))  # re checker
+        self.chk_re_expr = lambda x: bool(self.re_checker.fullmatch(x))  # re checker
 
     def traverse_file(self):
         '''
@@ -167,9 +167,10 @@ class TF_TXT_Feeder(TF_Feeder):
     '''
     base class to construct tf.data pipeline to read, parse & feed txt data
     '''
-    def __init__(self, data_path, recursive=True, re_expr='.*', granularity='file'):
+    def __init__(self, data_path, recursive=True, file_re='.*', line_re=None, granularity='file'):
         super(TF_TXT_Feeder, self).__init__(data_path)
-        self.traverser = File_Traverser(data_path, re_expr)  # treat data path as dir
+        self.traverser = File_Traverser(data_path, file_re)  # treat data path as dir
+        self.line_re = line_re
 
         assert granularity in ('file', 'line')
         self.granularity = granularity
@@ -250,7 +251,7 @@ class TFRecord_Constructer(object):
         self.input_dir = input_dir
         self.output_file = output_file
         self.re_checker = re.compile(re_expr)
-        self.chk_re_expr = lambda x: bool(self.re_checker.match(x))  # re checker
+        self.chk_re_expr = lambda x: bool(self.re_checker.fullmatch(x))  # re checker
         
         self.recursive = recursive  # if recursive finding into dir
 

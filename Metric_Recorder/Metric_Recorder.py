@@ -65,7 +65,7 @@ class Mertic_Record(object):
         auc_score = dict()
         balanced_acc = dict()
         max_pred_matrix = np.zeros(shape=(self.class_num, self.class_num), dtype=int)
-        mean_prop_matrix = np.zeros(shape=(self.class_num, self.class_num), dtype=int)
+        mean_prob_matrix = np.zeros(shape=(self.class_num, self.class_num), dtype=float)
 
         for i in range(self.class_num):
             cur_pred_flat = np.array(self.pred_flat)[:, i]
@@ -88,9 +88,9 @@ class Mertic_Record(object):
         # calculate statistical matrix for prediction & prob
         for i, j, cur_pred_prob in zip(label_class, pred_class, self.pred_flat):
             max_pred_matrix[i, j] += 1
-            mean_prop_matrix[i] = mean_prop_matrix[i] + cur_pred_prob
+            mean_prob_matrix[i] += cur_pred_prob
         self.max_pred_matrix = max_pred_matrix
-        self.mean_prop_matrix = mean_prop_matrix / len(self.pred_flat)
+        self.mean_prob_matrix = mean_prob_matrix / len(self.pred_flat)
 
     def _cal_curve(self):
         fpr = dict()
@@ -182,7 +182,7 @@ class Mertic_Record(object):
         print('mean prop matrix:')
         print('\t' + '\t'.join([self.class_name[i] for i in range(self.class_num)]))
         for i in range(self.class_num):
-            print(self.class_name[i] + '\t' + '\t'.join([str(prob) for prob in self.mean_prop_matrix[i]]))
+            print(self.class_name[i] + '\t' + '\t'.join([str(prob) for prob in self.mean_prob_matrix[i]]))
 
         sys.stdout.flush()
 
