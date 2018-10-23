@@ -88,7 +88,7 @@ class Mertic_Record(object):
         # calculate statistical matrix for prediction & prob
         for i, j, cur_pred_prob in zip(label_class, pred_class, self.pred_flat):
             max_pred_matrix[i, j] += 1
-            mean_prob_matrix[i] += cur_pred_prob
+            mean_prob_matrix[i] = mean_prob_matrix[i] + cur_pred_prob
         self.max_pred_matrix = max_pred_matrix
         self.mean_prob_matrix = mean_prob_matrix / len(self.pred_flat)
 
@@ -179,14 +179,14 @@ class Mertic_Record(object):
         for i in range(self.class_num):
             print(self.class_name[i] + '\t' + '\t'.join([str(cnt) for cnt in self.max_pred_matrix[i]]))
         
-        print('mean prop matrix:')
+        print('mean prob matrix:')
         print('\t' + '\t'.join([self.class_name[i] for i in range(self.class_num)]))
         for i in range(self.class_num):
             print(self.class_name[i] + '\t' + '\t'.join([str(prob) for prob in self.mean_prob_matrix[i]]))
 
         sys.stdout.flush()
 
-    def plot_cur_epoch_curve(self, show=False, save_path=None, model_name=''):
+    def plot_cur_epoch_curve(self, show=False, save_path=None, model_name='', use_subdir=True):
         '''
         cal & plot curve, optionally saved into file
         '''
@@ -202,7 +202,10 @@ class Mertic_Record(object):
         plt.legend()
 
         if save_path:
-            plt.savefig(save_path + model_name + '_roc.png', bbox_inches='tight')
+            if use_subdir:
+                plt.savefig(save_path + 'roc/' + model_name + '.png', bbox_inches='tight')
+            else:
+                plt.savefig(save_path + model_name + '_roc.png', bbox_inches='tight')
         if show:
             plt.show()
         plt.close()
@@ -213,7 +216,10 @@ class Mertic_Record(object):
         plt.legend()
 
         if save_path:
-            plt.savefig(save_path + model_name + '_pre-recall.png', bbox_inches='tight')
+            if use_subdir:
+                plt.savefig(save_path + 'pre-recall/' + model_name + '.png', bbox_inches='tight')
+            else:
+                plt.savefig(save_path + model_name + '_pre-recall.png', bbox_inches='tight')
         if show:
             plt.show()
         plt.close()
