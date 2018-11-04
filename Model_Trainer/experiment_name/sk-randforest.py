@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 '''
-construct model for points cloud input based on sklearn
+script: construct model for points cloud input based on sklearn
 '''
 
 import sys
@@ -17,10 +17,11 @@ import numpy as np
 import matplotlib.pyplot as plt
 import sklearn.ensemble as sken
 import Data_Feeder as feeder
-import Metric_Recorder as recorder
+import Model_Analyzer as analyzer
 import Model_Constructer as constructer
 
 from optparse import OptionParser
+from sklearn.externals import joblib
 
 ''' parsing args '''
 
@@ -38,6 +39,7 @@ parser.add_option('--cv_fold', dest='cv_fold', type='int', default=0)
 parser.add_option('--class_num', dest='class_num', type=int, default=2)
 parser.add_option('--class_name', dest='class_name', default=None)
 parser.add_option('--corner_only', dest='corner_only', action='store_true', default=False)
+parser.add_option('--use_onehot', dest='use_onehot', default=False, action='store_true')
 
 parser.add_option('-e', '--epoch', dest='epoch', default=20, type='int')
 parser.add_option('-b', '--batch', dest='batch', default=1, type='int')
@@ -54,9 +56,9 @@ parser.add_option('--add_noise', dest='add_noise', default=False, action='store_
 (options, args) = parser.parse_args()
 
 model_name = options.model_name
-save_path = options.save_path.rstrip('/') + '/'
-analysis_dir = options.analysis_dir.rstrip('/') + '/'
-log_dir = options.log_dir.rstrip('/') + '/'
+save_path = options.save_path
+analysis_dir = options.analysis_dir
+log_dir = options.log_dir
 group_model = options.group_model
 
 path_train_set = options.path_train_set
@@ -64,6 +66,7 @@ path_val_set = options.path_val_set
 path_test_set = options.path_test_set
 class_num = options.class_num
 class_name = options.class_name.split(';')
+use_onehot = options.use_onehot
 cv_fold = options.cv_fold
 corner_only = options.corner_only
 
@@ -101,14 +104,15 @@ if not model_name:
 
 # mkdir if not existed
 if group_model:
-    analysis_dir = analysis_dir + model_name + '/'  # group analysis under folder with same name
-os.makedirs(save_path, exist_ok=True)
+    analysis_dir = os.path.join(analysis_dir, model_name) + '/'  # group analysis under folder with same name
 os.makedirs(analysis_dir, exist_ok=True)
+if save_path:
+    os.makedirs(save_path, exist_ok=True)
 
 # change std out if log dir originally given
 if options.log_dir:
     os.makedirs(log_dir, exist_ok=True)
-    log_file_path = log_dir + model_name
+    log_file_path = os.path.join(log_dir, model_name)
     log_file = open(log_file_path, 'w')
     sys.stdout = log_file
 
@@ -126,19 +130,22 @@ else:
 if select_cols is not None:
     select_cols = [int(num) for num in select_cols.split('-')] # str to int
 
-''' constructing dataset '''
+''' constructe dataset '''
 
-train_set = feeder.Corner_Radar_Points_Gen_Feeder(path_train_set, class_num=class_num, use_onehot=False, line_re=line_re, select_cols=select_cols)
+train_set = feeder.Corner_Radar_Points_Gen_Feeder(path_train_set, class_num=class_num,
+                                                  use_onehot=use_onehot, line_re=line_re, select_cols=select_cols)
 if cv_fold <= 0:
-    val_set = feeder.Corner_Radar_Points_Gen_Feeder(path_val_set, class_num=class_num, use_onehot=False, line_re=line_re, select_cols=select_cols)
-    test_set = feeder.Corner_Radar_Points_Gen_Feeder(path_test_set, class_num=class_num, use_onehot=False, line_re=line_re, select_cols=select_cols)
+    val_set = feeder.Corner_Radar_Points_Gen_Feeder(path_val_set, class_num=class_num,
+                                                    use_onehot=use_onehot, line_re=line_re, select_cols=select_cols)
+    test_set = feeder.Corner_Radar_Points_Gen_Feeder(path_test_set, class_num=class_num,
+                                                     use_onehot=use_onehot, line_re=line_re, select_cols=select_cols)
 
 # get all data points
-train_input, train_label = train_set.get_all_data(allowed=True)
+train_input, train_label = train_set.get_all_data()
 train_input = np.vstack(train_input)
 train_label = np.concatenate(train_label)
 if cv_fold <= 0:
-    val_input, val_label = val_set.get_all_data(allowed=True)
+    val_input, val_label = val_set.get_all_data()
     val_input = np.vstack(val_input)
     val_label = np.concatenate(val_label)
 
@@ -163,22 +170,22 @@ def evaluate_model(train_input, train_label, val_input, val_label):
 
     # evaluate on train set
     print('\ntrain set:')
-    train_metric = recorder.General_Mertic_Record(class_num=class_num, class_name=class_name)
+    train_metric = analyzer.General_Mertic_Record(class_num=class_num, class_name=class_name)
     train_metric.evaluate_model_at_once(prob_pred=rand_forest.predict_proba(train_input),
                                         loss=rand_forest.score(train_input, train_label),
                                         label=train_label,
-                                        is_onehot=False)
+                                        is_onehot=use_onehot)
 
     train_metric.print_result()
     train_metric.plot_cur_epoch_curve(save_path=analysis_dir, model_name='train-' + model_name, use_subdir=(not group_model))
 
     # evaluate on val set
     print('\nvalidation set:')
-    val_metric = recorder.General_Mertic_Record(class_num=class_num, class_name=class_name)
+    val_metric = analyzer.General_Mertic_Record(class_num=class_num, class_name=class_name)
     val_metric.evaluate_model_at_once(prob_pred=rand_forest.predict_proba(val_input),
                                     loss=rand_forest.score(val_input, val_label),
                                     label=val_label,
-                                    is_onehot=False)
+                                    is_onehot=use_onehot)
     val_metric.print_result()
     val_metric.plot_cur_epoch_curve(save_path=analysis_dir, model_name='val-' + model_name, use_subdir=(not group_model))
     
@@ -193,9 +200,9 @@ def evaluate_model(train_input, train_label, val_input, val_label):
     plt.bar(range(train_input.shape[1]), importances[sort_idx], yerr=std[sort_idx], align="center")
     plt.xticks(range(train_input.shape[1]), [train_set.feature_names[idx] for idx in sort_idx])
     if group_model:
-        plt.savefig(analysis_dir + model_name + '_feature_importances.png')
+        plt.savefig(os.path.join(analysis_dir, model_name + '_feature_importances.png'))
     else:
-        plt.savefig(analysis_dir + 'feature_importances/' + model_name + '.png')
+        plt.savefig(os.path.join(analysis_dir, 'feature_importances/', model_name + '.png'))
 
 ''' training & monitoring '''
 
@@ -213,6 +220,9 @@ else:
     # fit & evaluate model
     rand_forest.fit(train_input, train_label)
     evaluate_model(train_input, train_label, val_input, val_label)
+
+if save_path:
+    joblib.dump(rand_forest, filename=save_path + model_name)
 
 print("finish")
 if options.log_dir:

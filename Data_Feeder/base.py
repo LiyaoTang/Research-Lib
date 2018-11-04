@@ -37,6 +37,16 @@ class File_Traverser(object):
                 if self.chk_re_expr(name):
                     yield os.path.join(dirpath, name)
 
+    def list_all_file_path(self, sort=True):
+        '''
+        get all paths to selected files in list
+        '''
+        # var after 'in' should be defined & can use condition filtering
+        path_list = [(dir_p, fname) for dir_p, _, files in os.walk(os.path.expanduser(self.data_dir)) for fname in files if self.chk_re_expr(fname)]
+        if sort:
+            path_list = sorted(path_list)
+        return path_list
+
 
 class TF_Feeder(object):
     '''
@@ -78,7 +88,7 @@ class TF_Feeder(object):
         else:
             iterator = dataset.make_initializable_iterator()
 
-        return iterator    
+        return iterator
 
 
 class TFRecord_Feeder(TF_Feeder):
@@ -218,29 +228,50 @@ class Gen_Feeder(object):
     def _get_input_label_pair(self, dirpath, name):
         raise NotImplementedError
 
-    def feed_one_example(self):
+    def iterate_data_file(self):
         '''
         iterate through the dataset for once
-        feed one example per time
+        feed examples in one file per time
         '''
         for dirpath, name in self.traverser.traverse_file():
             yield self._get_input_label_pair(dirpath, name)
 
-    def get_all_data(self, allowed=False):
+    def get_all_data(self):
         '''
-        dangeraous: feed all data at once
+        dangerous: feed all data at once
         use unless small enough & cannot partial fit
         '''
-        if not allowed:
-            raise Warning('you sure understand?')
-            sys.exit()
         input_list = []
         label_list = []
-        for cur_input, cur_label in self.feed_one_example():
+        for cur_input, cur_label in self.iterate_data_file():
             input_list.append(cur_input)
             label_list.append(cur_label)
 
         return input_list, label_list
+
+    def _record_pred(self, data_dirpath, data_name, pred_func, model_name, out_subdir, overwrite):
+        raise NotImplementedError
+    
+    def record_prediction(self, pred_func, model_name, output_dir='./Prediction', dataset_name='Data', overwrite=False):
+        '''
+        record the prediction with the same dir struct as data
+        must be provided a func to predict data in one file
+        '''
+        for dirpath, name in self.traverser.traverse_file():
+            # create corresponding dir struct
+            dir_list = dirpath.strip('/').split('/')
+            subdir = '/'.join(dir_list[dir_list.index(dataset_name) + 1:])
+            out_subdir = os.path.join(output_dir, subdir)
+            os.makedirs(out_subdir, exist_ok=True)
+
+            # pred & write into file
+            self._record_pred(dirpath, name, pred_func, model_name, out_subdir, overwrite)
+
+    def load_with_metadata(self, data_dir, data_name):
+        '''
+        load data in one file with corresponding meta data
+        '''
+        raise NotImplementedError
 
 
 class TFRecord_Constructer(object):
