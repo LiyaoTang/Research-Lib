@@ -1,7 +1,7 @@
 #ifndef SINGLETON_H
 #define SINGLETON_H
-#include <pthread.h>
 
+#include <pthread.h>
 
 /**
  * Thread-safe, no-manual destroy Singleton template
@@ -36,4 +36,4 @@ private:
     static pthread_once_t _p_once = PTHREAD_ONCE_INIT;  // initialization once control
     static T*             _instance = NULL;             // singleton instance
 };
-#endif
+#endif // SINGLETON_H
