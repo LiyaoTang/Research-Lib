@@ -24,7 +24,7 @@ void Thread::start() {
             0);
     CHECK_EQ(pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL), 0);
     // cautious to use PTHREAD_CANCEL_ASYNCHRONOUS
-    CHECK_EQ(pthread_setcanceltype(this->_cancel_type, NULL), 0);
+    CHECK_EQ(pthread_setcanceltype(this->_cancel_type, NULL), 0); // <-- invalid cancel_type trigger error here
 
     // pass in the object as well => derived class can define task specific variables & use in its thread
     // "reinterpret_cast" to bypass/ignore intermediate check/result
