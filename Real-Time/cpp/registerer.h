@@ -76,6 +76,13 @@ public:
     }
 
     template <typename ValueType>
+    ValueType *to_ptr_unsafe() const {
+        // no typeid() expression to speed up
+        // as acquiring typeid under polymorphism needs virtual table look-up
+        return &static_cast<Holder<ValueType> *>(_content)->_held;
+    }
+
+    template <typename ValueType>
     ValueType any_cast(const Any &rv) {
         const ValueType *rst = rv.to_ptr<ValueType>();  // try converting to a ptr of specified ValueType
         if (rst) {
@@ -156,7 +163,7 @@ bool get_registered_classes(
                 return NULL;                                                                                                        \
             }                                                                                                                       \
             Any object = iter->second->new_instance(); /** ObjectFactory "new_instance()" returns instance of Any **/               \
-            return *(object.any_cast<base_class *>()); /** *(a ptr to base_class*) => a base_class* type ptr **/                    \
+            return object.any_cast<base_class *>();    /** cast to a base_class* type ptr **/                                       \
         }                                                                                                                           \
         static std::vector<base_class *> get_all_instances() {                                                                      \
             std::vector<base_class *> instances;                                                                                    \
@@ -164,7 +171,7 @@ bool get_registered_classes(
             instances.reserve(map.size());                                                                                          \
             for (auto item : map) {                                                                                                 \
                 Any object = item.second->new_instance();                                                                           \
-                instances.push_back(*(object.any_cast<base_class *>())); /** a vector of base_class* type ptr **/                   \
+                instances.push_back(object.any_cast<base_class *>()); /** a vector of base_class* type ptr **/                      \
             }                                                                                                                       \
             return instances;                                                                                                       \
         }                                                                                                                           \
@@ -178,7 +185,7 @@ bool get_registered_classes(
             FactoryMap &map = REFISTER_NAMESPACE::global_factory_map()[#base_class];                                                \
             CHECK_EQ(map.size(), 1) << map.size();                                                                                  \
             Any object = map.begin()->second->new_instance();                                                                       \
-            return *(object.any_cast<base_class *>());                                                                              \
+            return object.any_cast<base_class *>();                                                                                 \
         }                                                                                                                           \
         static bool is_valid(const ::std::string &name) {                                                                           \
             FactoryMap &map = REFISTER_NAMESPACE::global_factory_map()[#base_class];                                                \
