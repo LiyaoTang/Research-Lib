@@ -61,7 +61,7 @@ public:
         : _content(other._content ? other._content->clone() : NULL) {}
 
     ~Any() {
-        delete _content;
+        delete _content;  // invoke underlying deconstructor
     }
 
     const std::type_info &type_info() const {
@@ -77,18 +77,23 @@ public:
 
     template <typename ValueType>
     ValueType *to_ptr_unsafe() const {
-        // no typeid() expression to speed up
-        // as acquiring typeid under polymorphism needs virtual table look-up
+        // no typeid() expression to speed up, hence unsafe for no type check
+        // (acquiring typeid under polymorphism needs virtual table look-up)
         return &static_cast<Holder<ValueType> *>(_content)->_held;
     }
 
     template <typename ValueType>
-    ValueType any_cast(const Any &rv) {
-        const ValueType *rst = rv.to_ptr<ValueType>();  // try converting to a ptr of specified ValueType
+    ValueType any_cast() const {
+        const ValueType *rst = this->to_ptr<ValueType>();  // try converting to a ValueType* type ptr
         if (rst) {
             return *rst;
         }
         throw std::bad_cast();
+    }
+
+    template <typename ValueType>
+    ValueType any_cast_unsafe() const {  // speed up using to_ptr_unsafe()
+        return _content ? *(this->to_ptr_unsafe<ValueType>()) : NULL;
     }
 
 private:
@@ -110,7 +115,7 @@ private:
         }
 
         virtual const std::type_info &type_info() const {
-            return std::typeid(value_type);
+            return typeid(ValueType);
         }
 
         ValueType _held;
@@ -162,8 +167,8 @@ bool get_registered_classes(
                 LOG(ERROR) << "Get instance " << name << " failed.";                                                                \
                 return NULL;                                                                                                        \
             }                                                                                                                       \
-            Any object = iter->second->new_instance(); /** ObjectFactory "new_instance()" returns instance of Any **/               \
-            return object.any_cast<base_class *>();    /** cast to a base_class* type ptr **/                                       \
+            Any object = iter->second->new_instance(); /** virtual function call, derived ObjectFactory returns from "new" **/      \
+            return object.any_cast<base_class *>();    /** cast back to a base_class* type ptr **/                                  \
         }                                                                                                                           \
         static std::vector<base_class *> get_all_instances() {                                                                      \
             std::vector<base_class *> instances;                                                                                    \
@@ -193,7 +198,8 @@ bool get_registered_classes(
         }                                                                                                                           \
     };
 
-// define a class inheriting ObjectFactory, overriding new_instance(). able to instantiate the given clazz
+// define a class inheriting ObjectFactory, overriding new_instance() to instantiate class called "name"
+// specifically, put a factory producing name* type pointer (via new) into the FactoryMap for base_class "clazz"
 #define REGISTER_CLASS(clazz, name)                                                                                                \
     namespace {                                                                                                                    \
     using FactoryMap = REFISTER_NAMESPACE::FactoryMap;                                                                             \
@@ -203,7 +209,8 @@ bool get_registered_classes(
     public:                                                                                                                        \
         virtual ~ObjectFactory##name() {}                                                                                          \
         virtual Any new_instance() {                                                                                               \
-            return Any(new name());                                                                                                \
+            /** implicit instantiation template constructor Any<name*> (new name()) **/                                            \
+            return Any(new name()); /** thus holding a name* type ptr **/                                                          \
         }                                                                                                                          \
     };                                                                                                                             \
                                                                                                                                    \
