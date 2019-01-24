@@ -71,7 +71,7 @@ public:
     template <typename ValueType>
     ValueType *to_ptr() const {
         // convert the "_content" into a ptr to its derived class "Holder" with ValueType (performed with check)
-        // then get the address of its actual content (_held)
+        // then get the address of its actual content (_held). note the use of static_cast
         return this->type_info() == typeid(ValueType) ? &static_cast<Holder<ValueType> *>(_content)->_held : NULL;
     }
 
@@ -99,13 +99,13 @@ public:
 private:
     class PlaceHolder {
     public:
-        virtual ~PlaceHolder() {}  // this makes the type polymorphic
+        virtual ~PlaceHolder() {}  // this makes the type polymorphic (an interface)
         virtual PlaceHolder *clone() const = 0;
         virtual const std::type_info &type_info() const = 0;
     };
 
-    template <typename ValueType>
-    class Holder : public PlaceHolder {  // inheritance with template
+    template <typename ValueType>  // inheritance with template => make any type to follow the interface
+    class Holder : public PlaceHolder {
     public:
         explicit Holder(const ValueType &value) : _held(value) {}
         virtual ~Holder() {}
@@ -118,7 +118,7 @@ private:
             return typeid(ValueType);
         }
 
-        ValueType _held;
+        ValueType _held;  // actual object stored
     };
 
     PlaceHolder *_content;  // holding a polymorphic (generic) type
@@ -147,18 +147,18 @@ bool get_registered_classes(
 }  // namespace registerer
 }  // namespace base
 
-#define REFISTER_NAMESPACE ::base::registerer
+#define REGISTER_NAMESPACE ::base::registerer
 
 // create a class, able to search through the map on demand.
 // specifically, used to get the factory map for the specified base_class, and .find( factory for derived class ) in it.
 #define REGISTER_REGISTERER(base_class)                                                                                             \
     class base_class##Registerer {                                                                                                  \
-        using Any = REFISTER_NAMESPACE::Any;                                                                                        \
-        using FactoryMap = REFISTER_NAMESPACE::FactoryMap;                                                                          \
+        using Any = REGISTER_NAMESPACE::Any;                                                                                        \
+        using FactoryMap = REGISTER_NAMESPACE::FactoryMap;                                                                          \
                                                                                                                                     \
     public:                                                                                                                         \
         static base_class *get_instance_by_name(const ::std::string &name) {                                                        \
-            FactoryMap &map = REFISTER_NAMESPACE::global_factory_map()[#base_class]; /** insert new element in map if not found **/ \
+            FactoryMap &map = REGISTER_NAMESPACE::global_factory_map()[#base_class]; /** insert new element in map if not found **/ \
             FactoryMap::iterator iter = map.find(name);                              /** find subclass by name **/                  \
             if (iter == map.end()) {                                                                                                \
                 for (auto c : map) {                                                                                                \
@@ -172,7 +172,7 @@ bool get_registered_classes(
         }                                                                                                                           \
         static std::vector<base_class *> get_all_instances() {                                                                      \
             std::vector<base_class *> instances;                                                                                    \
-            FactoryMap &map = REFISTER_NAMESPACE::global_factory_map()[#base_class];                                                \
+            FactoryMap &map = REGISTER_NAMESPACE::global_factory_map()[#base_class];                                                \
             instances.reserve(map.size());                                                                                          \
             for (auto item : map) {                                                                                                 \
                 Any object = item.second->new_instance();                                                                           \
@@ -182,18 +182,18 @@ bool get_registered_classes(
         }                                                                                                                           \
         static const ::std::string get_uniq_instance_name() {                                                                       \
             /** the selected FactpryMap contains only 1 derived class factory **/                                                   \
-            FactoryMap &map = REFISTER_NAMESPACE::global_factory_map()[#base_class];                                                \
+            FactoryMap &map = REGISTER_NAMESPACE::global_factory_map()[#base_class];                                                \
             CHECK_EQ(map.size(), 1) << map.size();                                                                                  \
             return map.begin()->first;                                                                                              \
         }                                                                                                                           \
         static base_class *get_uniq_instance() {                                                                                    \
-            FactoryMap &map = REFISTER_NAMESPACE::global_factory_map()[#base_class];                                                \
+            FactoryMap &map = REGISTER_NAMESPACE::global_factory_map()[#base_class];                                                \
             CHECK_EQ(map.size(), 1) << map.size();                                                                                  \
             Any object = map.begin()->second->new_instance();                                                                       \
             return object.any_cast<base_class *>();                                                                                 \
         }                                                                                                                           \
         static bool is_valid(const ::std::string &name) {                                                                           \
-            FactoryMap &map = REFISTER_NAMESPACE::global_factory_map()[#base_class];                                                \
+            FactoryMap &map = REGISTER_NAMESPACE::global_factory_map()[#base_class];                                                \
             return map.find(name) != map.end(); /** chk if base_class found **/                                                     \
         }                                                                                                                           \
     };
@@ -202,20 +202,20 @@ bool get_registered_classes(
 // specifically, put a factory producing name* type pointer (via new) into the FactoryMap for base_class "clazz"
 #define REGISTER_CLASS(clazz, name)                                                                                                \
     namespace {                                                                                                                    \
-    using FactoryMap = REFISTER_NAMESPACE::FactoryMap;                                                                             \
-    using Any = REFISTER_NAMESPACE::Any;                                                                                           \
+    using FactoryMap = REGISTER_NAMESPACE::FactoryMap;                                                                             \
+    using Any = REGISTER_NAMESPACE::Any;                                                                                           \
                                                                                                                                    \
-    class ObjectFactory##name : public REFISTER_NAMESPACE::ObjectFactory {                                                         \
+    class ObjectFactory##name : public REGISTER_NAMESPACE::ObjectFactory {                                                         \
     public:                                                                                                                        \
         virtual ~ObjectFactory##name() {}                                                                                          \
-        virtual Any new_instance() {                                                                                               \
-            /** implicit instantiation template constructor Any<name*> (new name()) **/                                            \
+        virtual Any new_instance() override {                                                                                      \
+            /** use the Any interface with implicit instantiation of its template constructor Any<name*> (new name()) **/          \
             return Any(new name()); /** thus holding a name* type ptr **/                                                          \
         }                                                                                                                          \
     };                                                                                                                             \
                                                                                                                                    \
     __attribute__((constructor)) void register_factory_##name() {           /** invoked before main() entered **/                  \
-        FactoryMap &map = REFISTER_NAMESPACE::global_factory_map()[#clazz]; /** get / insert the base class (clazz) in the map **/ \
+        FactoryMap &map = REGISTER_NAMESPACE::global_factory_map()[#clazz]; /** get / insert the base class (clazz) in the map **/ \
         if (map.find(#name) == map.end())                                   /** find the derived class (name) **/                  \
             map[#name] = new ObjectFactory##name();                         /** insert itself if not found (thus registered) **/   \
     }                                                                                                                              \
