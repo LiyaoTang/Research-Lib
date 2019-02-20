@@ -1,0 +1,5 @@
+uint8 COLOR_NONE = 0
+uint8 COLOR_YELLOW = 1
+uint8 COLOR_WHITE = 2
+uint8 COLOR_BLUE = 10
+uint8 COLOR_ORANGE = 11

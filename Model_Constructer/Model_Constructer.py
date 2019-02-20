@@ -1,10 +1,151 @@
 #!/usr/bin/env python
 # coding: utf-8
 '''
-base class to construct a training pipeline
+module: base class to config / construct a training pipeline
 '''
 
+import os
 import numpy as np
+from argparse import ArgumentParser
+from optparse import OptionParser
+
+class Default_Argumentparser(ArgumentParser):
+    def __init__(self, model_group_name, dataset_name, root_dir='../../', class_num=-1, class_name='', cv_fold=0):
+        super(Default_Optparser, self).__init__()
+        # file related
+        self.add_argument('--name',           dest='model_name')
+        self.add_argument('--save',           dest='save_path',   default='./Model/%s/' % model_group_name)
+        self.add_argument('--analysis_dir',   dest='analysis_dir', default='./Model_Analysis/%s/' % model_group_name)
+        self.add_argument('--log_dir',        dest='log_dir',     default='./Log/%s/' % model_group_name)
+        self.add_argument('--no_summary',     dest='record_summary',  default=True, action='store_false')
+        self.add_argument('--summary_dir',    dest='summary_dir', default='./Summary')
+        self.add_argument('--groupby_model',  dest='groupby_model', default=False, action='store_true')
+
+        # model config
+        self.add_argument('--loss_type', dest='loss_type', default='xen')
+        self.add_argument('--learning_rate',  dest='learning_rate',   default=1e-5, type='float')
+        self.add_argument('--reg_scale',      dest='regularizer_scale', default=0.1, type='float')
+        self.add_argument('--reg_type',       dest='regularizer_type', default='')
+        self.add_argument('--weighted_loss',  dest='weighted_loss',   default='')
+        self.add_argument('--batchnorm',      dest='batchnorm',       default=0,  type=int) # 0-disable; 1-enable
+
+        # data feeding
+        self.add_argument('--train',      dest='path_train_set', default=os.path.join(root_dir, 'Data/%s/train' % dataset_name))
+        self.add_argument('--val',        dest='path_val_set', default=os.path.join(root_dir, 'Data/%s/val' % dataset_name))
+        self.add_argument('--test',       dest='path_test_set', default=os.path.join(root_dir, 'Data/%s/test' % dataset_name))
+        self.add_argument('--cv_fold',    dest='cv_fold',     default=cv_fold, type=int)
+        self.add_argument('--class_num',  dest='class_num',   default=class_num, type=int)
+        self.add_argument('--class_name', dest='class_name',  default=class_name)
+        self.add_argument('--norm_type',  dest='norm_type',   default='')
+        self.add_argument('--use_onehot', dest='use_onehot',  default=False, action='store_true')
+        self.add_argument('--rand_seed',  dest='rand_seed',   default=None, type=int)
+        self.add_argument('--add_noise',  dest='add_noise',   default=False, action='store_true')
+
+        # model training
+        self.add_option('-e', '--epoch',    dest='epoch', default=20, type='int')
+        self.add_option('-b', '--batch',    dest='batch', default=1,  type='int')
+    
+    def parse_args(self):
+        '''
+        wrapper function for early assertion & parsing logic - for all model, feeder & dataset
+        '''
+        args = super(Default_Optparser, self).parse_args()
+
+        # legal value chk
+        # TODO: change crf from loss_type into postprocess
+        for arg_n, legal_val in zip(['regularizer_type', 'norm_type', 'weighted_loss', 'batchnorm', 'loss_type'],
+                                    [('', 'L1', 'L2'), ('', 'm', 's'), ('', 'bal'), (0, 1), ('xen', 'crf')]):
+            cur_val = getattr(args, arg_n)
+            if cur_val not in legal_val:
+                raise ValueError('supported values for opt %s are %s, but received %s' % (arg_n, str(legal_val), str(cur_val)))
+        
+        # class name - num chk
+        class_name = args.class_name.split(';')
+        class_num = args.class_num
+        if class_num != len(class_name):
+            raise ValueError('specified class num = %d not consistent with num of given class name: %s' % (class_num, class_name))
+
+        # pre-convert
+        args.class_name = class_name
+        args.batchnorm = (args.batchnorm == 1)
+
+        # configration for model - add model_config
+        model_config = {}
+        for arg_n in ['learning_rate', 'regularizer_type', 'regularizer_scale', 'weighted_loss', 'batchnorm', 'record_summary', 'loss_type']:
+            model_config[arg_n] = getattr(args, arg_n)
+        setattr(args, 'model_config', model_config)
+
+        return args
+
+
+class Default_Optparser(OptionParser):
+    def __init__(self, model_group_name, dataset_name, root_dir='../../', class_num=-1, class_name='', cv_fold=0):
+        super(Default_Optparser, self).__init__()
+        # file related
+        self.add_option('--name',           dest='model_name')
+        self.add_option('--save',           dest='save_path',   default='./Model/%s/' % model_group_name)
+        self.add_option('--analysis_dir',   dest='analysis_dir', default='./Model_Analysis/%s/' % model_group_name)
+        self.add_option('--log_dir',        dest='log_dir',     default='./Log/%s/' % model_group_name)
+        self.add_option('--no_summary',     dest='record_summary',  default=True, action='store_false')
+        self.add_option('--summary_dir',    dest='summary_dir', default='./Summary')
+        self.add_option('--groupby_model',  dest='groupby_model', default=False, action='store_true')
+
+        # model config
+        self.add_option('--loss_type', dest='loss_type', default='xen')
+        self.add_option('--learning_rate',  dest='learning_rate',   default=1e-5, type='float')
+        self.add_option('--reg_scale',      dest='regularizer_scale', default=0.1, type='float')
+        self.add_option('--reg_type',       dest='regularizer_type', default='')
+        self.add_option('--weighted_loss',  dest='weighted_loss',   default='')
+        self.add_option('--batchnorm',      dest='batchnorm',       default=0,  type=int) # 0-disable; 1-enable
+
+        # data feeding
+        self.add_option('--train',      dest='path_train_set', default=os.path.join(root_dir, 'Data/%s/train' % dataset_name))
+        self.add_option('--val',        dest='path_val_set', default=os.path.join(root_dir, 'Data/%s/val' % dataset_name))
+        self.add_option('--test',       dest='path_test_set', default=os.path.join(root_dir, 'Data/%s/test' % dataset_name))
+        self.add_option('--cv_fold',    dest='cv_fold',     default=cv_fold, type=int)
+        self.add_option('--class_num',  dest='class_num',   default=class_num, type=int)
+        self.add_option('--class_name', dest='class_name',  default=class_name)
+        self.add_option('--norm_type',  dest='norm_type',   default='')
+        self.add_option('--use_onehot', dest='use_onehot',  default=False, action='store_true')
+        self.add_option('--rand_seed',  dest='rand_seed',   default=None, type=int)
+        self.add_option('--add_noise',  dest='add_noise',   default=False, action='store_true')
+
+        # model training
+        self.add_option('-e', '--epoch',    dest='epoch', default=20, type='int')
+        self.add_option('-b', '--batch',    dest='batch', default=1,  type='int')
+    
+    def parse_args(self):
+        '''
+        wrapper function for early assertion & parsing logic - for all model, feeder & dataset
+        '''
+        (options, args) = super(Default_Optparser, self).parse_args()
+
+        # legal value chk
+        # TODO: change crf from loss_type into postprocess
+        for arg_n, legal_val in zip(['regularizer_type', 'norm_type', 'weighted_loss', 'batchnorm', 'loss_type'],
+                                    [('', 'L1', 'L2'), ('', 'm', 's'), ('', 'bal'), (0, 1), ('xen', 'crf')]):
+            cur_val = getattr(options, arg_n)
+            if cur_val not in legal_val:
+                raise ValueError('supported values for opt %s are %s, but received %s' % (arg_n, str(legal_val), str(cur_val)))
+        
+        # class name - num chk
+        class_name = options.class_name.split(';')
+        class_num = options.class_num
+        if class_num != len(class_name):
+            raise ValueError('specified class num = %d not consistent with num of given class name: %s' % (class_num, class_name))
+
+        # pre-convert
+        options.class_name = class_name
+        options.batchnorm = (options.batchnorm == 1)
+
+        # configration for model - add model_config
+        model_config = {}
+        for arg_n in ['learning_rate', 'regularizer_type', 'regularizer_scale', 'weighted_loss', 'batchnorm', 'record_summary', 'loss_type']:
+            model_config[arg_n] = getattr(options, arg_n)
+        setattr(options, 'model_config', model_config)
+
+        return (options, args)
+
 
 class Cross_Val_Trainer(object):
     '''

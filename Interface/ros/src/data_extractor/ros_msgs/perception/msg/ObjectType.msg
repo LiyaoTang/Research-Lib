@@ -1,0 +1,10 @@
+uint8 CAR=0         # 汽车，吉普车，SUV，面包车
+uint8 V_CAR=1       # 虚拟障碍物
+uint8 BIG_TRUCK=2   # 卡车，箱式卡车，皮卡车，大篷车，洒水车大型车辆，且后部/装载区域与驾驶室物理分离
+uint8 SMALL_TRUCK=3 # 快递三轮车、农用机动车等, 小型车辆，且后部/装载区域与驾驶室物理分离
+uint8 BUS=4         # 公交车、客车
+uint8 CYCLELIST=5   # 驾驶中的自行车、驾驶中的电动车、驾驶中的摩托车
+uint8 MISC=6        # 马车，挖掘机，推土机、电车,不常见车辆
+uint8 PERSON=7
+uint8 OBSTACLE=8
+uint8 UNKNOWN=255

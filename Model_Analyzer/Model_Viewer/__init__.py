@@ -4,4 +4,4 @@
 import control for folder Model_Viewer
 '''
 
-from .Moder_Viewer import *
+from .Model_Viewer import *

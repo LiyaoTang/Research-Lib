@@ -1,0 +1,10 @@
+uint8 LBR_MARKING_NONE = 0                                 # // 无
+uint8 LBR_MARKING_LONG_DASHED_LINE = 1                     # // 长虚线
+uint8 LBR_MARKING_DOUBLE_SOLID_LINE = 2                    # // 双实线
+uint8 LBR_MARKING_SINGLE_SOLID_LINE = 3                    # // 单实线
+uint8 LBR_MARKING_RIGHT_SOLID_LINE_LEFT_DASHED_LINE = 4    # // 左虚右实
+uint8 LBR_MARKING_LEFT_SOLID_LINE_RIGHT_DASHED_LINE = 5    # // 左实右虚
+uint8 LBR_MARKING_DOUBLE_DASHED_LINE = 9                   # // 双虚线
+uint8 LBR_MARKING_CURB = 11                                # // 路沿（道路边界）
+uint8 LBR_MARKING_GUARDRAIL = 17                           # // 护栏（道路边界）
+uint8 LBR_MARKING_UNKNOWN = 255                            # // 错误位

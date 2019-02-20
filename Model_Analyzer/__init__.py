@@ -4,6 +4,7 @@
 import control for folder Model_Analyzer
 '''
 
-from Model_Analyzer.Metric_Recorder import *  # import submodule
-from Model_Analyzer.Loader import *
-from Model_Analyzer.Model_Viewer import *
+from .Metric_Recorder import *  # import submodule
+from .Loader import *
+from .Log_Parser import *
+from .Model_Viewer import Model_Viewer as viewer
