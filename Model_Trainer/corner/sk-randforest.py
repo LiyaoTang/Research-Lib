@@ -7,7 +7,6 @@ script: construct model for points cloud input based on sklearn
 import sys
 root_dir = '../../'
 sys.path.append(root_dir)
-sys.path.append(root_dir + 'Data/corner/scripts')
 
 import os
 import psutil
@@ -132,7 +131,7 @@ if select_cols is not None:
 
 ''' constructe dataset '''
 
-train_set = feeder.Corner_Radar_Points_Gen_Feeder(path_train_set, class_num=class_num,
+train_set = feeder.Corner_Radar_Points_Gen_Feeder(path_train_set, class_num=class_num, file_re='.*\.csv',
                                                   use_onehot=use_onehot, line_re=line_re, select_cols=select_cols)
 if cv_fold <= 0:
     val_set = feeder.Corner_Radar_Points_Gen_Feeder(path_val_set, class_num=class_num,
@@ -142,8 +141,9 @@ if cv_fold <= 0:
 
 # get all data points
 train_input, train_label = train_set.get_all_data()
-train_input = np.vstack(train_input)
-train_label = np.concatenate(train_label)
+train_input = np.vstack([l for l in train_input if len(l) > 0])
+train_label = np.concatenate([l for l in train_label if len(l) > 0])
+
 if cv_fold <= 0:
     val_input, val_label = val_set.get_all_data()
     val_input = np.vstack(val_input)
@@ -170,24 +170,22 @@ def evaluate_model(train_input, train_label, val_input, val_label):
 
     # evaluate on train set
     print('\ntrain set:')
-    train_metric = analyzer.General_Mertic_Record(class_num=class_num, class_name=class_name)
+    train_metric = analyzer.General_Classif_Record(class_num=class_num, class_name=class_name)
     train_metric.evaluate_model_at_once(prob_pred=rand_forest.predict_proba(train_input),
-                                        loss=rand_forest.score(train_input, train_label),
                                         label=train_label,
                                         is_onehot=use_onehot)
 
     train_metric.print_result()
-    train_metric.plot_cur_epoch_curve(save_path=analysis_dir, model_name='train-' + model_name, use_subdir=(not group_model))
+    # train_metric.plot_cur_epoch_curve(save_path=analysis_dir, model_name='train-' + model_name, use_subdir=(not group_model))
 
     # evaluate on val set
     print('\nvalidation set:')
-    val_metric = analyzer.General_Mertic_Record(class_num=class_num, class_name=class_name)
+    val_metric = analyzer.General_Classif_Record(class_num=class_num, class_name=class_name)
     val_metric.evaluate_model_at_once(prob_pred=rand_forest.predict_proba(val_input),
-                                    loss=rand_forest.score(val_input, val_label),
-                                    label=val_label,
-                                    is_onehot=use_onehot)
+                                      label=val_label,
+                                      is_onehot=use_onehot)
     val_metric.print_result()
-    val_metric.plot_cur_epoch_curve(save_path=analysis_dir, model_name='val-' + model_name, use_subdir=(not group_model))
+    # val_metric.plot_cur_epoch_curve(save_path=analysis_dir, model_name='val-' + model_name, use_subdir=(not group_model))
     
     # print & plot feature importance
     importances = rand_forest.feature_importances_
@@ -197,12 +195,12 @@ def evaluate_model(train_input, train_label, val_input, val_label):
     print('\nfeature importances:\n', 'name\t', [train_set.feature_names[idx] for idx in sort_idx])
     print('score\t', importances[sort_idx], '\n', 'std\t', std[sort_idx])
     # plotd
-    plt.bar(range(train_input.shape[1]), importances[sort_idx], yerr=std[sort_idx], align="center")
-    plt.xticks(range(train_input.shape[1]), [train_set.feature_names[idx] for idx in sort_idx])
-    if group_model:
-        plt.savefig(os.path.join(analysis_dir, model_name + '_feature_importances.png'))
-    else:
-        plt.savefig(os.path.join(analysis_dir, 'feature_importances/', model_name + '.png'))
+    # plt.bar(range(train_input.shape[1]), importances[sort_idx], yerr=std[sort_idx], align="center")
+    # plt.xticks(range(train_input.shape[1]), [train_set.feature_names[idx] for idx in sort_idx])
+    # if group_model:
+    #     plt.savefig(os.path.join(analysis_dir, model_name + '_feature_importances.png'))
+    # else:
+    #     plt.savefig(os.path.join(analysis_dir, 'feature_importances/', model_name + '.png'))
 
 ''' training & monitoring '''
 

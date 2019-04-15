@@ -68,7 +68,7 @@ class Matlibplot_Widget(qtwg.QWidget):
             self.canvas.mpl_connect('pick_event', self._on_pick)
 
     def _reset_ann(self):
-        for ann, xy in zip(self.ann_list, self.xy_arr):
+        for ann, xy in zip(self.ann_list, self.ann_xylist):
             ann.set_visible(False)
             ann.set_position(xy)
         self.canvas.draw_idle()
@@ -100,7 +100,7 @@ class Matlibplot_Widget(qtwg.QWidget):
 
         start = [min([event.xdata, self.press[0]]), min([event.ydata, self.press[1]])]
         end = [max([event.xdata, self.press[0]]), max([event.ydata, self.press[1]])]
-        idx_list = np.where(np.logical_and(start < self.xy_arr, self.xy_arr < end).all(axis=1))[0]
+        idx_list = np.where(np.logical_and(start < self.ann_xylist, self.ann_xylist < end).all(axis=1))[0]
         for idx in idx_list:
             self.ann_list[idx].set_visible(self.press_btn == 1)
 
@@ -118,6 +118,7 @@ class Matlibplot_Widget(qtwg.QWidget):
     def _append_new_annotation(self, xy_list, ann_list):
         for xy, ann in zip(xy_list, ann_list):
             self.ann_list.append(self.ax.annotate(ann, xy=xy))
+            self.ann_xylist.append(xy)
             self.ann_list[-1].set_visible(False)
             self.ann_list[-1].draggable()
 
@@ -137,6 +138,7 @@ class Matlibplot_Widget(qtwg.QWidget):
         #     # color_arr = np.ones(25)
 
         self.ann_list = []
+        self.ann_xylist = []
         self.point_arr = []
 
         # new figure & annotation
@@ -210,26 +212,31 @@ class Model_Viewer(qtwg.QMainWindow):
     '''
     view & analyze the model with input, label, its prediction and meta data
     '''
-    def __init__(self, dataset_name, root_dir='../../', model_group='.*', model_name='.*', log_dir='./Log'):
+    def __init__(self, dataset_name, dataset_dir, pred_dir, feeder, models=[], log_dir='./Log'):
         super(Model_Viewer, self).__init__()
 
-        self.project = Project_Loader(dataset_name, root_dir=root_dir, verbose=True)
-        self.project.load_models(model_group, model_name)
-        print(self.project.feeder)
+        self.models = models
+        self.feeder = feeder
+        print(self.feeder)
 
         self.log_dir = log_dir
-        self.dataset_dir = os.path.join(self.project.dataset_dir.split(dataset_name)[0], dataset_name) + '/'
-        self.data_files = sorted([os.path.join(d.split(dataset_name)[-1].strip('/'), f) for d, f in self.project.feeder.traverser.list_all_file_path()])
+        self.pred_dir = pred_dir
+        self.dataset_dir = os.path.join(dataset_dir.split(dataset_name)[0], dataset_name) + '/' # assure to be 'root_dir/Data/dataset'
+
+        self.dataset_name = dataset_name
+        self.data_files = sorted([os.path.join(d.split(dataset_name)[-1].strip('/'), f) for d, f in self.feeder.traverser.list_all_file_path()])
         self.data_list = []
         self.file_idx = 0
         self.data_idx = 0
         
-        self.input_type = self.project.input_type
-        self.output_type = self.project.output_type
+        # self.input_type = self.project.input_type
+        # self.output_type = self.project.output_type
 
         if dataset_name == 'corner':
             self._parse_data_dict_to_plot_def = self._parse_corner_data_dict_to_plot_def
         elif dataset_name == 'back':
+            self._parse_data_dict_to_plot_def = self._parse_back_data_dict_to_plot_def
+        elif dataset_name == 'fusion':
             self._parse_data_dict_to_plot_def = self._parse_back_data_dict_to_plot_def
         else:
             raise ValueError('not supported dataset %s' % dataset_name)
@@ -239,7 +246,7 @@ class Model_Viewer(qtwg.QMainWindow):
     def _init_ui(self):
         # log setup TODO: define None Value - distinguish from empty
         os.makedirs(self.log_dir, exist_ok=True)
-        self.cur_log_path = os.path.join(self.log_dir, dataset_name)
+        self.cur_log_path = os.path.join(self.log_dir, self.dataset_name)
         self.tags = ['model err', 'model diff', 'label err']
         if os.path.isfile(self.cur_log_path):
             self.log_file = pd.read_csv(self.cur_log_path, index_col=['file', 'data'],)
@@ -353,7 +360,7 @@ class Model_Viewer(qtwg.QMainWindow):
 
         # input/label - matlibplot widget
         label_layout = qtwg.QVBoxLayout()
-        feature_names = ' '.join(self.project.feeder.feature_names)
+        feature_names = ' '.join(self.feeder.feature_names)
         label_metaline = qtwg.QLabel(feature_names)
         label_metaline.setWordWrap(True)
         label_metaline.setAlignment(qtc.Qt.AlignCenter)
@@ -389,7 +396,7 @@ class Model_Viewer(qtwg.QMainWindow):
         gc.collect()
 
         # load new file
-        self.data_list = self.project.feeder.load_with_metadata(data_dir, data_name, self.project.pred_dir)
+        self.data_list = self.feeder.load_with_metadata(data_dir, data_name, self.pred_dir)
         self.data_idx = 0
         self.file_idx = file_idx
         self.data_widget.addItems([str(i) for i in range(len(self.data_list))])
@@ -524,7 +531,7 @@ class Model_Viewer(qtwg.QMainWindow):
 
         # update input/label
         self.label_widget.plot(points=label_plotdef['points'], boxes=label_plotdef['boxes'], circles=label_plotdef['circles'],
-                               color_name=self.project.feeder.class_name)
+                               color_name=self.feeder.class_name)
         
         # update prediction
         for name, idx in zip(pred_plotdef.keys(), range(len(pred_plotdef.keys()))): # pred per model
@@ -535,11 +542,11 @@ class Model_Viewer(qtwg.QMainWindow):
 
             if cur_page:  # existing model
                 cur_page.plot(points=cur_pred['points'], boxes=cur_pred['boxes'], circles=cur_pred['circles'],
-                              color_name=self.project.feeder.class_name)
+                              color_name=self.feeder.class_name)
             else:  # new model
                 cur_page = Matlibplot_Widget()
                 cur_page.plot(points=cur_pred['points'], boxes=cur_pred['boxes'], circles=cur_pred['circles'],
-                              color_name=self.project.feeder.class_name)
+                              color_name=self.feeder.class_name)
                 self.pred_widget.addTab(cur_page, name)
 
         self.update()
@@ -613,19 +620,44 @@ if __name__ == '__main__':
     
     parser = OptionParser()
     parser.add_option('--root_dir', dest='root_dir')
+
     parser.add_option('--dataset_name', dest='dataset_name')
-    parser.add_option('--model_group', dest='model_group')
+    parser.add_option('--dataset_dir', dest='dataset_dir', default='')
+    parser.add_option('--pred_dir', dest='pred_dir', default='')
+
+    parser.add_option('--model_group', dest='model_group', default='.*')
+    parser.add_option('--model_name', dest='model_name', default='.*')
+    parser.add_option('--model_source', dest='model_source', default='loader')
     (options, args) = parser.parse_args()
 
-    root_dir = options.root_dir
-    dataset_name = options.dataset_name
-    model_group = options.model_group
     sys.path.append(root_dir)
 
     app = qtwg.QApplication([])
 
+    if options.model_source == 'loader':
+        project = Project_Loader(options.dataset_name, root_dir=options.root_dir, verbose=True)
+        models, _ = project.load_models(options.model_group, options.model_name)
+        feeder = project.feeder
+        pred_dir = project.pred_dir
+        dataset_dir = project.dataset_dir
+        
+    else:  # import model from thridparty: model_source = dir_path / py_file / class_name
+        path_list = options.model_source.split('/')
+        sys.path.append(os.path.join(*path_list[:-2]))  # include dir path in PATH
+        loader = __import__(path_list[-1].split('.')[0], fromlist=[''])  # import module
+        feeder_class = getattr(loader, path_list[-1])  # get the feeder class
+        
+        # pred_dir & dataset_dir must provided (used by feeder)
+        dataset_dir = options.dataset_dir
+        pred_dir = options.pred_dir
+        try:
+            feeder = feeder_class(dataset_dir)
+        except:
+            feeder = feeder_class()
+            pass
+
     # at least one - app exits when the last one closed
-    window = Model_Viewer(dataset_name, root_dir, model_group)
+    window = Model_Viewer(options.dataset_name, options.dataset_dir, pred_dir, feeder, models=[])
     window.showMaximized()
 
     # Start the event loop.

@@ -11,10 +11,8 @@ namespace carpoint{
 CarPoint::CarPoint(): base::RandForest(2, 8, 80) {}
 CarPoint::~CarPoint() {}
 
-std::vector<double> CarPoint::collect_pred(const std::vector<double> &input){
+void CarPoint::collect_pred(const std::vector<double> &input, std::vector<double> &classes){
     // vector to cnt pred from each tree
-    std::vector<double> classes(this->class_num, 0);
-
     classes[predict_0(input)]++;
     classes[predict_1(input)]++;
     classes[predict_2(input)]++;
@@ -95,7 +93,7 @@ std::vector<double> CarPoint::collect_pred(const std::vector<double> &input){
     classes[predict_77(input)]++;
     classes[predict_78(input)]++;
     classes[predict_79(input)]++;
-    return classes;
+    return;
 }
 
 } // namespace carpoint

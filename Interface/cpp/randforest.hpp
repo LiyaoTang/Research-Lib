@@ -15,7 +15,7 @@ public:
     ~CarPoint();
 
 private:
-    std::vector<double> collect_pred(const std::vector<double> &input) override;
+    void collect_pred(const std::vector<double> &input, std::vector<double> &classes) override;
 };
 
 } // namespace carpoint
