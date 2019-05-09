@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 '''
-module: base class to construct TF models
+module: base class to construct TF models, using tf.__version__ 1.4.2
 '''
 
 import types
@@ -57,27 +57,14 @@ class TF_Constructer(object):
     def _build_preprocess(self):
         # build initial net
         # normalization of input
-        with tf.variable_scope('Preprocess'):
-            if 'norm_params' in self.config and any([bool(n) for n in self.config['norm_params'].values()]):
-                tf_norm_func = dict()
+        self.net = self.tf_input  # default to raw input if not defined or all empty
+        if 'norm_params' in self.config:
+            with tf.variable_scope('Preprocess'):
                 norm_params = self.config['norm_params']
-                for phase in ['train', 'val', 'test']:
-                    tf_norm_func[phase] = self.tf_input  # default to raw input
-                    # manipulate only if params for cur phase defined
-                    if phase in norm_params:
-                        cur_params = norm_params[phase]
-                        if 'mean' in cur_params:
-                            tf_norm_func[phase] = tf_norm_func[phase] - cur_params['mean']
-                        if 'std' in cur_params:
-                            tf_norm_func[phase] = tf_norm_func[phase] / cur_params['std']
-
-                self.net = tf.case({tf.equal(self.tf_phase, 'train'): lambda: tf_norm_func['train'],
-                                    tf.equal(self.tf_phase, 'val'): lambda: tf_norm_func['val'],
-                                    tf.equal(self.tf_phase, 'test'): lambda: tf_norm_func['test']},
-                                    default=lambda: tf_norm_func['train'], # use 'train-eval' to have default invoked & is_training to be False
-                                    exclusive=True)
-            else: # raw input if not defined or all empty
-                self.net = self.tf_input
+                if 'mean' in norm_params:
+                    self.net = self.net - norm_params['mean']
+                if 'std' in norm_params:
+                    self.net = self.net / norm_params['std']
 
     def print_attributes(self):
         '''
@@ -255,6 +242,7 @@ class FCN_Pipe_Constructer(TF_Constructer):
 
                 self.merged_summary = tf.summary.merge_all()
 
+
 class Unet_Constructer(FCN_Pipe_Constructer):
     '''
     construct a FCN-pipe (FCN with no downsampling) model
@@ -399,5 +387,38 @@ class Unet_Constructer(FCN_Pipe_Constructer):
             for n in tf.get_default_graph().as_graph_def().node:
                 print(n.name)
             print('=================================================================================')
+        if self.config['record_summary']:
+            self._build_summary()
+
+
+class Resnet_Constructer(TF_Constructer):
+    def __init__(self, conv_struct, class_num, tf_input, tf_label, tf_phase, config_dict={}):
+        super(Resnet_Constructer, self).__init__(class_num=class_num, tf_input=tf_input, tf_label=tf_label, tf_phase=tf_phase,
+                                                   config_dict=config_dict)
+        # using resnet default
+        for argn, legal, default in zip(['min_lrn_rate', 'lrn_rate', 'num_residual_units', 'use_bottleneck', 'weight_decay_rate', 'relu_leakiness', 'optimizer'],
+                                        [('', 'L1', 'L2'), ('', 'bal'), (True, False), (True, False), 'xen, crf', ('sgd', 'mom', 'adam')],
+                                        [0.0001        ,  0.1      ,  5                  ,  False          ,  0.0002,              0.1,             'mom']):
+            if argn in self.config:
+                cur_val = self.config[argn]
+                if cur_val not in legal:
+                    raise ValueError('supported values for args %s are %s, but received %s' % (argn, str(legal), str(cur_val)))
+            else:
+                self.config[argn] = default
+
+        self._build_graph()
+
+    def residual_block(self, input, version='v1'):
+        return
+
+    def _build_graph(self):
+        self.global_step = tf.train.get_or_create_global_step()
+        self._build_model()
+        self._build_logits()
+        self._build_loss()
+        self._build_output()
+        # for n in tf.get_default_graph().as_graph_def().node:
+        #     print(n.name)
+        # print('=================================================================================')
         if self.config['record_summary']:
             self._build_summary()

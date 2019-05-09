@@ -3,3 +3,6 @@
 
 # jupyter notebook cache
 **/.ipynb_checkpoints
+
+# Data stuff
+Data/**
