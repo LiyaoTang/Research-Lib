@@ -34,20 +34,23 @@ def leaky_relu(input, slope=0.01, name='lrelu'):
     with tf.variable_scope(name):
         return tf.nn.relu(input) - slope * tf.nn.relu(-input)
 
-def prelu(input, weights, name='prelu'):
+def prelu(input, weights=None, initializer=tf.constant_initializer(0.25), name='prelu'):
+    # tf 2.0: tf.keras.layers.PReLU(): sharing parameter inside layer
     with tf.variable_scope(name):
+        if weights is None:
+            weights = get_variable('weights', shape=[input.get_shape().as_list()[-1]], initializer=initializer)
         return tf.nn.relu(input) - weights * tf.nn.relu(-input)
 
 # pooling
-def unpooling(inputs, before_pool, padding, ksize=[1,2,2,1], strides=[1,2,2,1], name=None, data_format="NHWC"):
+def unpooling(input, before_pool, padding, ksize=[1,2,2,1], strides=[1,2,2,1], name=None, data_format="NHWC"):
     '''
     apply unpooling given the corresponding pooling op
     by using the gradient of pooling op
     '''
     raise PermissionError('not permitted to use: not tested yet')
     unpool = gen_nn_ops._max_pool_grad(orig_input=before_pool,
-                                       orig_output=inputs,
-                                       grad=inputs,
+                                       orig_output=input,
+                                       grad=input,
                                        ksize=ksize,
                                        strides=strides,
                                        padding=padding,
@@ -55,36 +58,36 @@ def unpooling(inputs, before_pool, padding, ksize=[1,2,2,1], strides=[1,2,2,1], 
                                        name=name)
     return unpool
 
-def max_unpooling(inputs, factor, scope='max_unpooling'):
+def max_unpooling(input, factor, scope='max_unpooling'):
     '''
     N-dimensional version of the unpooling operation from
     https://www.robots.ox.ac.uk/~vgg/rg/papers/Dosovitskiy_Learning_to_Generate_2015_CVPR_paper.pdf
 
-    inputs: A Tensor of shape [batch, d0, d1...dn, channel]
+    input: A Tensor of shape [batch, d0, d1...dn, channel]
     return: A Tensor of shape [batch, facor*d0, facor*d1...facor*dn, channel]
     '''
     with tf.name_scope(scope) as sc:
-        shape = inputs.get_shape().as_list()
+        shape = input.get_shape().as_list()
         dim = len(shape[1:-1])
-        out = (tf.reshape(inputs, [-1] + shape[-dim:]))
+        out = (tf.reshape(input, [-1] + shape[-dim:]))
         for i in range(dim, 0, -1):
             out = tf.concat([out] + (factor - 1) * [tf.zeros_like(out)], i)
         out_size = [-1] + [s * factor for s in shape[1:-1]] + [shape[-1]]
         out = tf.reshape(out, out_size, name=sc)
     return out
 
-def average_unpooling(inputs, factor, scope='average_unpooling'):
+def average_unpooling(input, factor, scope='average_unpooling'):
     '''
     N-dimensional version of the unpooling operation from
     https://www.robots.ox.ac.uk/~vgg/rg/papers/Dosovitskiy_Learning_to_Generate_2015_CVPR_paper.pdf
 
-    inputs: A Tensor of shape [batch, d0, d1...dn, channel]
+    input: A Tensor of shape [batch, d0, d1...dn, channel]
     return: A Tensor of shape [batch, facor*d0, facor*d1...facor*dn, channel]
     '''
     with tf.name_scope(scope) as sc:
-        shape = inputs.get_shape().as_list()
+        shape = input.get_shape().as_list()
         dim = len(shape[1:-1])
-        out = (tf.reshape(inputs, [-1] + shape[-dim:]))
+        out = (tf.reshape(input, [-1] + shape[-dim:]))
         for i in range(dim, 0, -1):
             out = tf.concat(factor * [out], i)
         out_size = [-1] + [s * factor for s in shape[1:-1]] + [shape[-1]]
@@ -101,7 +104,7 @@ def conv(input, kernel, biases, stride_w, stride_h, padding, num_groups=1):
     if num_groups == 1:
         conv = convolve(input, kernel)
     else:
-        #group means we split the input  into 'num_groups' groups along the third dimension
+        #group means we split the input into 'num_groups' groups along the third dimension
         input_groups = tf.split(input, num_groups, 3)
         kernel_groups = tf.split(kernel, num_groups, 3)
         output_groups = [convolve(i, k) for i,k in zip(input_groups, kernel_groups)]
@@ -130,8 +133,8 @@ def dense_layer(input, num_channels, activation=tf.nn.relu,
     else:
         return dense_out
 
-def conv_layer(input, num_filters, filter_size, stride=1, num_groups=1, padding='VALID', scope=None,
-        activation=tf.nn.relu, weights_initializer=None, bias_initializer=None, return_vars=False, summary=True):
+def conv_layer(input, out_channels, filter_size, stride=1, num_groups=1, padding='VALID', scope=None,
+               activation=tf.nn.relu, weights_initializer=None, bias_initializer=None, return_vars=False, summary=True):
     if type(filter_size) == int:
         filter_width = filter_size
         filter_height = filter_size
@@ -146,14 +149,17 @@ def conv_layer(input, num_filters, filter_size, stride=1, num_groups=1, padding=
         stride_width, stride_height = stride
     else:
         raise Exception('stride is not int or tuple')
+    
     if weights_initializer is None:
+        # TF 2.0: tf.initializers.GlorotUniform()
         weights_initializer = tf.contrib.layers.xavier_initializer()
     if bias_initializer is None:
         bias_initializer = tf.zeros_initializer()
-    shape = [filter_width, filter_height, input.get_shape().as_list()[3] / num_groups, num_filters]
+
+    shape = [filter_width, filter_height, input.get_shape().as_list()[3] / num_groups, out_channels]
     with cond_scope(scope):
         W_conv = get_variable('W_conv', shape, initializer=weights_initializer, summary=summary)
-        b_conv = get_variable('b_conv', [num_filters], initializer=bias_initializer, summary=summary)
+        b_conv = get_variable('b_conv', [out_channels], initializer=bias_initializer, summary=summary)
         if summary:
             conv_variable_summaries(W_conv)
         conv_out = conv(input, W_conv, b_conv, stride_width, stride_height, padding, num_groups)
@@ -163,6 +169,42 @@ def conv_layer(input, num_filters, filter_size, stride=1, num_groups=1, padding=
             return conv_out, W_conv, b_conv
         else:
             return conv_out
+
+def rnn_gru_layer(input, rnn_size, batch_size, num_unrolls, bi_direct=False):
+    '''
+    TF 2.0:
+    cell = MinimalRNNCell(32)
+    x = keras.Input((None, 5))
+    layer = RNN(cell)
+    y = layer(x)
+
+    # Here's how to use the cell to build a stacked RNN:
+    cells = [MinimalRNNCell(32), MinimalRNNCell(64)]
+    '''
+    # prepare
+    if rnn_size is int:
+        rnn_size = [rnn_size]
+    else:
+        assert rnn_size is list or rnn_size is tuple
+
+    for n in range(rnn_size):
+        assert n % 2 == 0
+        cell_fw = tf.nn.rnn_cell.GRUCell(n/2)
+        cell_bw = tf.nn.rnn_cell.GRUCell(n/2)
+
+        state_fw = cell_fw.zero_state(batch_size, tf.float32)
+        state_bw = cell_bw.zero_state(batch_size, tf.float32)
+
+        # TF 2.0: keras.layers.Bidirectional(keras.layers.RNN(cell))
+        (output_fw, output_bw), last_state = tf.nn.bidirectional_dynamic_rnn(cell_fw, cell_bw, input,
+                                                                            sequence_length=num_unrolls,
+                                                                            initial_state_fw=state_fw,
+                                                                            initial_state_bw=state_bw,
+                                                                            scope='biLSTM_'+ str(n),
+                                                                            dtype=tf.float32)
+
+        cell_output = tf.concat([output_fw, output_bw], axis=-1)
+    return cell_output, last_state
 
 # save & restore
 def restore(session, save_file, raise_if_not_found=False):
