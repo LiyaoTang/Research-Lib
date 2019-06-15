@@ -347,7 +347,7 @@ class Gen_Feeder(object):
     def iterate_data(self):
         '''
         iterate through the dataset for once
-        feed examples in one file per time
+        feed one example a time
         '''
         for dirpath, name in self.traverser.traverse_file():
             yield from self._get_input_label_pair(dirpath, name)
@@ -390,58 +390,180 @@ class Gen_Feeder(object):
         '''
         raise NotImplementedError
 
-
 class Gen_CVFeeder(Gen_Feeder):
     '''
     feed data in a cross-validation fashion
-    TODO: finish building the class
+    TODO: finish building the class: to cooperate with cross validation
     '''
     def __init__(self, data_dir, class_num, fold_num, re_expr='.*', use_onehot=True):
         super(Gen_CVFeeder, self).__init__(data_dir, class_num, re_expr=re_expr, use_onehot=use_onehot, split=[1] * fold_num)
         raise NotImplementedError
 
-
-class TFRecord_Constructer(object):
+class Feeder(object):
     '''
-    base class to construct tfrecord
+    base class to feed data based on a file to map: key -> input-label pair
     '''
-    def __init__(self, input_dir, output_file, re_expr='.*', recursive=True):
-        self.input_dir = input_dir
-        self.output_file = output_file
-        self.re_expr = re_expr
-        
-        self.recursive = recursive  # if recursive finding into dir
+    def __init__(self, data_keys_path, class_num, class_name=None, use_onehot=True, config={}):
+        self.data_keys_path = data_keys_path
+        self.data_keys = self._load_keys()
 
-    def _chk_re_expr(self, string):
-        return bool(re.fullmatch(self.re_expr, string))
+        self.class_num = class_num
+        if class_name is None:
+            class_name = dict(zip(range(class_num), [str(n) for n in range(class_num)]))
+        elif not (type(class_name) is dict):  # treat as iterable
+            class_name = dict(zip(range(class_num), class_name))
+        self.class_name = class_name
 
-    def _traverse_file(self):
-        assert self.recursive
+        self.use_onehot = use_onehot
+        self.config = config
+        self.ext_module = dict()
+
+    def _to_onehot(self, label_list):
+        '''
+        transform **a 1-D list** of label into one-hot label
+        '''
+        height = len(label_list)
         
-        # traverse
-        for dirpath, dirnames, files in os.walk(self.input_dir):
-            for name in files:
-                if self._chk_re_expr(name):
-                    yield(dirpath, name)
+        label = np.zeros((height, self.class_num), dtype=int)
+        label[np.arange(height), label_list] = 1
+
+        return label
     
-    def collect_meta_data(self, meta_data_file):
+    def _load_keys(self):
+        return None
+
+    def _get_input_label_pair(self, key):
+        raise NotImplementedError
+
+    def iterate_data(self):
         '''
-        implemented in derived class: collect meta data e.g. mean, std, class statistics
+        iterate through the dataset for once; one example a time
+        '''
+        for key in self.data_keys:
+            return self._get_input_label_pair(key)
+
+    def iterate_with_metadata(self, key):
+        '''
+        iterate over data with corresponding meta data
         '''
         raise NotImplementedError
 
-    def _get_raw_input_label_pair(self, dirpath, name):
-        raise NotImplementedError
+class Parallel_Feeder(object):
+    '''
+    construct a parallel py-process to load data: enable loading-training pipeline
+    warning: should NOT modify passed in feeder afterwards
+    '''
+    def __init__(self, feeder, batch_size=1, buffer_size=5, worker_num=1):
+        super(Parallel_Feeder, self).__init__()
 
-    def _construct_example(self, input_data_raw, label_data_raw):
-        raise NotImplementedError
+        assert isinstance(feeder, Feeder)  # a data feeder with data keys mapping: key -> input-label
+        self.__feeder = feeder
+        self.__data_keys = feeder.data_keys  # all data paths to load each input-label pair
 
-    def write_into_record(self):
+        self.__state = {'alive': True,
+                        'batch_size': batch_size,
+                        'buffer_size': buffer_size,
+                        'worker_num': __worker_num,
+                        'wrapable': False}
+
+        self.mp = __import__('multiprocessing', fromlist=[''])
+        self.__state_lock = self.mp.Lock()  # lock for state reading/setting
+        self.__buffer = self.mp.Queue(maxisize=buffer_size)  # buffer for filling data
+        self.__worker = []
+
+    def _create_worker(self):
+        # distribute data_keys to each worker
+        key_segment = int(len(self.__data_keys) / self.__worker_num) + 1
+        for cnt in range(self.__worker_num):
+            start = cnt * key_segment
+            end = start + key_segment
+            self.__worker.append(self.mp.Process(target=self.__fill_buffur, args=(self.__data_keys[start:end])))
+        # start running
+        for w in self.__worker:
+            w.start()
+
+    def __read_state(self):
+        # atomic read current state
+        self.__state_lock.acquire()
+        state = self.__state.copy()  # copy dict
+        self.__state_lock.release()
+        return state
+
+    def __set_state(self, state):
+        self.__state_lock.acquire()
+        for k in state:
+            self.__state[k] = state[k]
+        self.__state_lock.release()
+
+    def __fill_buffur(self, data_keys):
+        # running in parallel
+        data_generator = (self.__feeder._get_input_label_pair(k) for k in data_keys)
+        # random.choices(data_keys, weights=[...]) for random sample
+        while True:
+            state = self.__read_state()
+            cur_data = []
+            for _ in range(state['batch_size']):
+                try:
+                    cur_data.append(next(data_generator))
+                except StopIteration:
+                    if state['warpable']: # if wrap around
+                        np.random.shuffle(data_keys)
+                        data_generator = (self.__feeder._get_input_label_pair(k) for k in data_keys)
+                        cur_data.append(next(data_generator))
+                    else:  # not to wrap: stop here
+                        state['alive'] = False
+                        break
+            
+            if cur_data:  # enqueue if containing data, potentially blocking
+                self.__buffer.put(cur_data)
+
+            if not state['alive']:
+                break
+
+    def iterate_data(self):
         '''
-        frame work to write into .tfrecord file
-        '''        
-        with tf.python_io.TFRecordWriter(self.output_file) as writer:
-            for dirpath, name in self._traverse_file(): # traverse
-                input_data_raw, label_data_raw = self._get_raw_input_label_pair(dirpath, name)
-                example = self._construct_example(input_data_raw, label_data_raw)
-                writer.write(example.SerializeToString()) # write into tfrecord
+        entry for main process: iterate through dataset for once; one batch a time
+        '''
+        # start responding to data request
+        cnt = 0
+        while True:
+            cnt += 1
+            try:
+                yield self.__buffer.get(timeout=5)  # potentially blocking
+            except self.mp.TimeoutError:
+                print('------------>')
+                print('time out when trying to read the %dth batch' % cnt)
+                print('<------------')
+            if cnt >= len(self.__data_keys):
+                break
+
+    def shutdown(self):
+        self.__state_lock.acquire()
+        self.__alive = False
+        self.__state_lock.release()
+        for p in self.__worker:
+            p.terminate()
+            p.close()
+
+
+
+    # def set_buffer_size(self, buffer_size, refresh=True)
+    #     if refresh:
+    #         self.refresh()
+    #     self.buffer_size = buffer_size
+
+    # def set_batch_size(self, batch_size, refresh=True):
+    #     if refresh:
+    #         self.refresh()
+    #     self.batch_size = batch_size
+    
+    # def cleanup(self):
+    #     self.worker.join()
+
+    # def launch(self):
+    #     self.worker = self.mp.Process(target=self._fill_buffur)
+
+
+    # def refresh(self):
+    #     self.cleanup()
+    #     self.launch()

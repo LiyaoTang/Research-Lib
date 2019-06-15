@@ -9,7 +9,51 @@ import re
 import h5py
 import numpy as np
 import tensorflow as tf
-from Data_Feeder.base import TFRecord_Constructer
+
+class TFRecord_Constructer(object):
+    '''
+    base class to construct tfrecord
+    '''
+    def __init__(self, input_dir, output_file, re_expr='.*', recursive=True):
+        self.input_dir = input_dir
+        self.output_file = output_file
+        self.re_expr = re_expr
+        
+        self.recursive = recursive  # if recursive finding into dir
+
+    def _chk_re_expr(self, string):
+        return bool(re.fullmatch(self.re_expr, string))
+
+    def _traverse_file(self):
+        assert self.recursive
+        
+        # traverse
+        for dirpath, dirnames, files in os.walk(self.input_dir):
+            for name in files:
+                if self._chk_re_expr(name):
+                    yield(dirpath, name)
+    
+    def collect_meta_data(self, meta_data_file):
+        '''
+        implemented in derived class: collect meta data e.g. mean, std, class statistics
+        '''
+        raise NotImplementedError
+
+    def _get_raw_input_label_pair(self, dirpath, name):
+        raise NotImplementedError
+
+    def _construct_example(self, input_data_raw, label_data_raw):
+        raise NotImplementedError
+
+    def write_into_record(self):
+        '''
+        frame work to write into .tfrecord file
+        '''        
+        with tf.python_io.TFRecordWriter(self.output_file) as writer:
+            for dirpath, name in self._traverse_file(): # traverse
+                input_data_raw, label_data_raw = self._get_raw_input_label_pair(dirpath, name)
+                example = self._construct_example(input_data_raw, label_data_raw)
+                writer.write(example.SerializeToString()) # write into tfrecord
 
 class txtData_Constructor(TFRecord_Constructer):
     '''

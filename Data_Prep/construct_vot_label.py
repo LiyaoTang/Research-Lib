@@ -2,6 +2,12 @@
 # coding: utf-8
 '''
 script: construct a npy file for label of ILSVRC2015 detectoin from video (VID) dataset
+    constructed array: [
+                        [package_id, video_id, frame_id, track_id, class_id, occludded, xmin, ymin, xmax, ymax],
+                        ...
+                        ]
+    ordered by: first video id, then track id, then frame id => all labels for a single track are next to each other
+    => construct MOT data into VOT label
 '''
 
 import os
@@ -108,7 +114,6 @@ def main(label_type):
                 print('\n%s' % img_p)
                 cv2.imshow('image', image)
                 cv2.waitKey(1)
-
             cnt += 1
 
     # reorder by video_id, then track_id, then frame_id => all labels for a single track are next to each other
