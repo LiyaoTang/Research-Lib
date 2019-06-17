@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 '''
-module: TF-based pipeline to feed data from tfrecord
+module: pipeline to solve data-related problem for neural net (e.g. feeding, recording, etc.)
 '''
 
 import os
@@ -16,7 +16,7 @@ import pandas as pd
 import tensorflow as tf
 import matplotlib.image as mpimg
 import google.protobuf as protobuf
-from .base import TFRecord_Feeder, TF_CSV_Feeder, TF_TXT_Feeder, Gen_Feeder
+from .base import TFRecord_Feeder, TF_CSV_Feeder, TF_TXT_Feeder, Gen_Feeder, Feeder
 
 class Img_from_Record_Feeder(TFRecord_Feeder):
     '''
@@ -333,7 +333,6 @@ class Corner_Radar_Points_Gen_Feeder(Gen_Feeder):
         for k in df.columns:
             if 'sk' in k:
                 cur_pred[k] = np.array(df[k])
-
         # load pic
         pic_path = os.path.join(data_dir.replace('radar_file', 'image_file'), data_name.replace('.csv', '.jpg'))
         cur_pic = mpimg.imread(pic_path)
@@ -572,7 +571,6 @@ class Corner_Radar_Boxcenter_Gen_Feeder(Gen_Feeder):
         # load pic
         pic_path = os.path.join(data_dir.replace('radar_file', 'image_file'), data_name.replace('.csv', '.jpg'))
         cur_pic = mpimg.imread(pic_path)
-
         return {'input': cur_input, 'label': cur_label, 'pred': cur_pred, 'img': cur_pic}
 
 
@@ -980,3 +978,80 @@ class Fusion_Gen_Feeder(Gen_Feeder):
         load data in one file into a list of dict with corresponding prediction & input
         '''
         return [data_dict for data_dict in self._iter_with_metadata_given_file(data_dir, data_name, pred_dir)]
+
+class Imagenet_VID_Feeder(Feeder):
+    '''
+    feeder to read from imagenet VID dataset, given a prepared list of references;
+    reference mapping: a ref -> a track (a series of img with one or more object)
+    original reference format: [[package_id, video_id, frame_id, track_id, class_id, occludded, xmin, ymin, xmax, ymax]...]
+    note: xy-min/max are in window coord => x indexing col & y indexing row 
+    '''
+    def __init__(self, data_ref_path, class_num, class_name=None, use_onehot=True, mode='VOT', num_unroll=2, config={}):
+        super(Imagenet_VID_Feeder, self).__init__(data_ref_path, class_num, class_name, use_onehot, config)
+        self.data_ref = self._load_data_ref()  # load the actual reference to data
+        self.num_unroll = num_unroll
+        
+        self.mode = mode  # MOT possibly contains multiple tracks in a frame
+        assert self.mode in ['VOT', 'MOT']
+
+        self._solve_label = self._solve_label_mask  # default to mask encoding
+        if 'label_type' in config:
+            if config['label_type'] == 'center':
+                self._solve_label = self._solve_label_center
+            elif config['label_type'] == 'corner':
+                self._solve_label = self._solve_label_corner
+
+        self.data_split = 'train' if 'data_split' not in config else config['data_split']  # default to train set
+        assert self.data_split in ['train', 'val', 'test']
+
+        self.data_dir = '/'.join(self.data_ref_path.strip('/').split('/')[:-1]) \
+                        if 'data_dir' not in config else config['data_dir']  # keys defaul to be directly under data dir
+
+    def _load_data_ref(self):
+        # TODO:should use pandas
+        refs = np.load(self.data_ref_path)
+        # restructure according to mode
+        data_ref = []
+        if self.mode == 'VOT':
+            # sort first by package, then video snippet, then track, then frame
+            idx = np.lexsort((refs[:, 2], refs[:, 3], refs[:, 1], refs[:, 0]))
+            refs = refs[idx]
+            
+            # construct ref to track with limited unroll: [track...], where track = [original ref...]
+            for idx in range(len(refs) - self.num_unroll):
+                start = list(refs[idx][[0, 1, 3]])
+                end = list(refs[idx + self.num_unroll - 1][[0, 1, 3]])
+                if start == end:  # still in the same track
+                    data_ref = refs[idx:idx + self.num_unroll]
+        else: # 'MOT'
+            # sort first by package, then video snippet, then frame
+            idx = np.lexsort((refs[:, 2], refs[:, 1], refs[:, 0]))
+            refs = refs[idx]
+            raise NotImplementedError
+        return data_ref
+
+    def _get_img(self, img_ref):
+        # ILSVRC2015/Data       /VID/[train, val, test]/[package]/[snippet ID]/[frame ID].JPEG
+        package_name = 'ILSVRC2015_VID_%s_%04d' % (self.data_split, img_ref[0])
+        img_path = '%s/Data/VID/%s/%s/%08d/%06d.JPEG' % (self.data_dir, self.data_split, package_name, img_ref[1], img_ref[2])
+        img = mpimg.imread(img_path)
+        return img
+
+    def _get_input_label_pair(self, ref):
+        input_seq = []
+        label_seq = []
+        prev_img = None
+        prev_label = None
+        for r in ref:  # for original_ref in constructed track/video ref
+            cur_img = self._get_img(r)
+            xmin, ymin, xmax, ymax = np.clip(ref[-4:], 0, cur_img.shape[[1, 0, 1, 0]])
+            cur_label = [ref[-6], xmin, ymin, xmax, ymax]
+
+            # construct input/label seq
+            if prev_img is None:
+                prev_img = cur_img
+            input_seq.append([cur_img, prev_img])
+            label_seq.append(cur_label)
+            
+        return input_seq, label_seq
+

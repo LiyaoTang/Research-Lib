@@ -403,9 +403,9 @@ class Feeder(object):
     '''
     base class to feed data based on a file to map: key -> input-label pair
     '''
-    def __init__(self, data_keys_path, class_num, class_name=None, use_onehot=True, config={}):
-        self.data_keys_path = data_keys_path
-        self.data_keys = self._load_keys()
+    def __init__(self, data_ref_path, class_num, class_name=None, use_onehot=True, config={}):
+        self.data_ref_path = data_ref_path
+        self.data_ref = self._load_data_ref()
 
         self.class_num = class_num
         if class_name is None:
@@ -429,20 +429,20 @@ class Feeder(object):
 
         return label
     
-    def _load_keys(self):
+    def _load_data_ref(self):
         return None
 
-    def _get_input_label_pair(self, key):
+    def _get_input_label_pair(self, ref):
         raise NotImplementedError
 
     def iterate_data(self):
         '''
         iterate through the dataset for once; one example a time
         '''
-        for key in self.data_keys:
-            return self._get_input_label_pair(key)
+        for ref in self.data_ref:
+            return self._get_input_label_pair(ref)
 
-    def iterate_with_metadata(self, key):
+    def iterate_with_metadata(self, ref):
         '''
         iterate over data with corresponding meta data
         '''
@@ -456,114 +456,117 @@ class Parallel_Feeder(object):
     def __init__(self, feeder, batch_size=1, buffer_size=5, worker_num=1):
         super(Parallel_Feeder, self).__init__()
 
-        assert isinstance(feeder, Feeder)  # a data feeder with data keys mapping: key -> input-label
+        assert isinstance(feeder, Feeder)  # a data feeder with mapping: key -> input-label
         self.__feeder = feeder
-        self.__data_keys = feeder.data_keys  # all data paths to load each input-label pair
+        self.__data_ref = feeder.data_ref  # mapping to load each input-label pair
 
-        self.__state = {'alive': True,
-                        'batch_size': batch_size,
-                        'buffer_size': buffer_size,
-                        'worker_num': __worker_num,
-                        'wrapable': False}
+        self.__config = {'alive': True,
+                         'batch_size': batch_size,
+                         'buffer_size': buffer_size,
+                         'worker_num': worker_num,
+                         'wrapable': False}
 
         self.mp = __import__('multiprocessing', fromlist=[''])
-        self.__state_lock = self.mp.Lock()  # lock for state reading/setting
+        self.__config_lock = self.mp.Lock()  # lock for state reading/setting
         self.__buffer = self.mp.Queue(maxisize=buffer_size)  # buffer for filling data
         self.__worker = []
 
     def _create_worker(self):
         # distribute data_keys to each worker
-        key_segment = int(len(self.__data_keys) / self.__worker_num) + 1
-        for cnt in range(self.__worker_num):
-            start = cnt * key_segment
-            end = start + key_segment
-            self.__worker.append(self.mp.Process(target=self.__fill_buffur, args=(self.__data_keys[start:end])))
+        ref_segment = int(np.ceil(len(self.__data_ref) / self.__config['worker_num']))
+        for cnt in range(self.__config['worker_num']):
+            start = cnt * ref_segment
+            end = start + ref_segment
+            self.__worker.append(self.mp.Process(target=self.__fill_buffur, args=(self.__data_ref[start:end],)))
         # start running
         for w in self.__worker:
             w.start()
 
-    def __read_state(self):
-        # atomic read current state
-        self.__state_lock.acquire()
-        state = self.__state.copy()  # copy dict
-        self.__state_lock.release()
-        return state
+    def shutdown(self):
+        for p in self.__worker:
+            p.terminate()
+        for p in self.__worker:
+            p.join()
+        self.__worker = []
+        self.__buffer.close()
+        self.__config_lock = None
+            
+    def refresh(self, config=None):
+        self.shutdown()
+        if config:
+            for k in config:
+                self.__config[k] = config[k]
+        # new lock, new queue
+        self.__config_lock = self.mp.Lock()
+        self.__buffer = self.mp.Queue(maxisize=self.__config['buffer_size'])
+    
+    def __del__(self):
+        self.shutdown()
 
-    def __set_state(self, state):
-        self.__state_lock.acquire()
-        for k in state:
-            self.__state[k] = state[k]
-        self.__state_lock.release()
+    def __read_config(self):
+        # atomic read current config
+        self.__config_lock.acquire()
+        config = self.__config.copy()  # copy dict
+        self.__config_lock.release()
+        return config
 
-    def __fill_buffur(self, data_keys):
+    def set_config(self, config):
+        '''
+        change the config on-the-fly
+        '''
+        self.__config_lock.acquire()
+        for k in config:
+            self.__config[k] = config[k]
+        self.__config_lock.release()
+
+    def __fill_buffur(self, data_ref):
         # running in parallel
-        data_generator = (self.__feeder._get_input_label_pair(k) for k in data_keys)
+        data_generator = (self.__feeder._get_input_label_pair(r) for r in data_ref)
         # random.choices(data_keys, weights=[...]) for random sample
         while True:
-            state = self.__read_state()
+            config = self.__read_config()
             cur_data = []
-            for _ in range(state['batch_size']):
+            for _ in range(config['batch_size']):
                 try:
                     cur_data.append(next(data_generator))
                 except StopIteration:
-                    if state['warpable']: # if wrap around
-                        np.random.shuffle(data_keys)
-                        data_generator = (self.__feeder._get_input_label_pair(k) for k in data_keys)
+                    if config['warpable']: # if wrap around
+                        np.random.shuffle(data_ref)
+                        data_generator = (self.__feeder._get_input_label_pair(k) for k in data_ref)
                         cur_data.append(next(data_generator))
                     else:  # not to wrap: stop here
-                        state['alive'] = False
+                        config['alive'] = False
                         break
             
             if cur_data:  # enqueue if containing data, potentially blocking
                 self.__buffer.put(cur_data)
 
-            if not state['alive']:
+            if not config['alive']:
                 break
 
-    def iterate_data(self):
+    def iterate_data(self, timeout=5):
         '''
         entry for main process: iterate through dataset for once; one batch a time
         '''
-        # start responding to data request
+        self._create_worker() # workers start runnning
         cnt = 0
         while True:
             cnt += 1
             try:
-                yield self.__buffer.get(timeout=5)  # potentially blocking
+                yield self.__buffer.get(timeout=timeout)  # potentially blocking
             except self.mp.TimeoutError:
                 print('------------>')
-                print('time out when trying to read the %dth batch' % cnt)
+                print('timeout when trying to read the %dth batch' % cnt)
                 print('<------------')
-            if cnt >= len(self.__data_keys):
+                raise
+            if cnt >= len(self.__data_ref):  # finished
                 break
+        
 
-    def shutdown(self):
-        self.__state_lock.acquire()
-        self.__alive = False
-        self.__state_lock.release()
-        for p in self.__worker:
-            p.terminate()
-            p.close()
-
-
-
-    # def set_buffer_size(self, buffer_size, refresh=True)
-    #     if refresh:
-    #         self.refresh()
-    #     self.buffer_size = buffer_size
-
-    # def set_batch_size(self, batch_size, refresh=True):
-    #     if refresh:
-    #         self.refresh()
-    #     self.batch_size = batch_size
-    
-    # def cleanup(self):
-    #     self.worker.join()
-
-    # def launch(self):
-    #     self.worker = self.mp.Process(target=self._fill_buffur)
-
-
-    # def refresh(self):
-    #     self.cleanup()
-    #     self.launch()
+    def feed_forever(self, timeout=5):
+        '''
+        entry for main process: create running-forever workers and a handle func to get data
+        '''
+        self.__config['wrapable'] = True
+        self._create_worker()
+        return self.__buffer.get

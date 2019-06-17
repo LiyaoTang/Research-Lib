@@ -5,7 +5,6 @@ module: utils to load pretrained tf models
 '''
 
 import tensorflow as tf
-import tensorflow.contrib.graph_editor as ge
 
 '''Examples
 pretrained_model = './external/tensorflow-deeplab-resnet/models/deeplab_resnet_init.ckpt'

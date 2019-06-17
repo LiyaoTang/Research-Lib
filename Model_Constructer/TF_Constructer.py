@@ -43,14 +43,6 @@ class TF_Constructer(object):
         else:
             config_dict['learning_rate'] = 1e-5
 
-        # config layer regularizer
-        regularizer = None
-        if config_dict['regularizer_type'] == 'L2':
-            regularizer = tf.contrib.layers.l2_regularizer(scale=config_dict['regularizer_scale'])
-        elif config_dict['regularizer_type'] == 'L1':
-            regularizer = tf.contrib.layers.l1_regularizer(scale=config_dict['regularizer_scale'])
-        config_dict['regularizer'] = regularizer
-
         self.config = config_dict
         self._build_preprocess()
 
@@ -387,38 +379,5 @@ class Unet_Constructer(FCN_Pipe_Constructer):
             for n in tf.get_default_graph().as_graph_def().node:
                 print(n.name)
             print('=================================================================================')
-        if self.config['record_summary']:
-            self._build_summary()
-
-
-class Resnet_Constructer(TF_Constructer):
-    def __init__(self, conv_struct, class_num, tf_input, tf_label, tf_phase, config_dict={}):
-        super(Resnet_Constructer, self).__init__(class_num=class_num, tf_input=tf_input, tf_label=tf_label, tf_phase=tf_phase,
-                                                   config_dict=config_dict)
-        # using resnet default
-        for argn, legal, default in zip(['min_lrn_rate', 'lrn_rate', 'num_residual_units', 'use_bottleneck', 'weight_decay_rate', 'relu_leakiness', 'optimizer'],
-                                        [('', 'L1', 'L2'), ('', 'bal'), (True, False), (True, False), 'xen, crf', ('sgd', 'mom', 'adam')],
-                                        [0.0001        ,  0.1      ,  5                  ,  False          ,  0.0002,              0.1,             'mom']):
-            if argn in self.config:
-                cur_val = self.config[argn]
-                if cur_val not in legal:
-                    raise ValueError('supported values for args %s are %s, but received %s' % (argn, str(legal), str(cur_val)))
-            else:
-                self.config[argn] = default
-
-        self._build_graph()
-
-    def residual_block(self, input, version='v1'):
-        return
-
-    def _build_graph(self):
-        self.global_step = tf.train.get_or_create_global_step()
-        self._build_model()
-        self._build_logits()
-        self._build_loss()
-        self._build_output()
-        # for n in tf.get_default_graph().as_graph_def().node:
-        #     print(n.name)
-        # print('=================================================================================')
         if self.config['record_summary']:
             self._build_summary()
