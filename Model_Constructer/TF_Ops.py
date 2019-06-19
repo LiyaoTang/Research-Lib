@@ -110,7 +110,7 @@ def average_unpooling(input, factor, scope='average_unpooling'):
         out = tf.reshape(out, out_size, name=sc)
     return out
 
-def spatial_pyramid_pooling(input, bin_dimensions, pooling_mode='max'):
+def spatial_pyramid_pooling(input, bin_dimensions, pooling_mode='max', scope='spp'):
     """
     Spatial pyramid pooling (SPP) is a pooling strategy to result in an output of fixed size.
     originally from pull request at repo https://github.com/yardstick17/tensorflow/tree/feature/spp_layer
@@ -124,12 +124,6 @@ def spatial_pyramid_pooling(input, bin_dimensions, pooling_mode='max'):
     Raises:
         ValueError: If `mode` is neither `max` nor `avg`.
     """
-    inputs_shape = array_ops.shape(input)
-    input_height = math_ops.cast(
-        array_ops.gather(inputs_shape, 1), tf.dtypes.float32)
-    input_width = math_ops.cast(
-        array_ops.gather(inputs_shape, 2), tf.dtypes.float32)
-
     if pooling_mode == 'max':
         pooling_op = math_ops.reduce_max
     elif pooling_mode == 'avg':
@@ -138,7 +132,7 @@ def spatial_pyramid_pooling(input, bin_dimensions, pooling_mode='max'):
         msg = "Mode must be either 'max' or 'avg'. Got '{0}'"
         raise ValueError(msg.format(pooling_mode))
 
-    def spp_in_bins(input, bin_dimension):
+    def spp_in_bins(input, bin_dimension, input_width, input_height):
         result = []
         for row in range(bin_dimension):
             for col in range(bin_dimension):
@@ -156,9 +150,15 @@ def spatial_pyramid_pooling(input, bin_dimensions, pooling_mode='max'):
             result.append(pool_result)
         return result
 
-    pool_list = []
-    for bin_dimension in bin_dimensions:
-        pool_list += spp_in_bins(input, bin_dimension)  # collect all tensor output into a single list
+    with tf.variable_scope(scope):
+        inputs_shape = array_ops.shape(input)
+        input_height = math_ops.cast(array_ops.gather(inputs_shape, 1), tf.dtypes.float32)
+        input_width = math_ops.cast(array_ops.gather(inputs_shape, 2), tf.dtypes.float32)
+
+        pool_list = []
+        for bin_dimension in bin_dimensions:
+            with tf.variable_scope('bin_%d' % bin_dimension):
+                pool_list += spp_in_bins(input, bin_dimension)  # collect all tensor output into a single list
     return array_ops.concat(values=pool_list, axis=1)
 
 
@@ -170,8 +170,7 @@ def conv(input, kernel, biases, stride_w, stride_h, padding, num_groups=1):
     '''
     From https://github.com/ethereon/caffe-tensorflow
     '''
-    def convolve(i, k): return tf.nn.conv2d(
-        i, k, [1, stride_h, stride_w, 1], padding=padding)
+    def convolve(i, k): return tf.nn.conv2d(i, k, [1, stride_h, stride_w, 1], padding=padding)
     if num_groups == 1:
         conv = convolve(input, kernel)
     else:
@@ -184,8 +183,8 @@ def conv(input, kernel, biases, stride_w, stride_h, padding, num_groups=1):
     return tf.nn.bias_add(conv, biases)
 
 
-def dense_layer(input, num_channels, activation=tf.nn.relu,
-                weights_initializer=None, bias_initializer=None, return_vars=False, summary=True):
+def dense_layer(input, num_channels, activation=tf.nn.relu, weights_initializer=None,
+                bias_initializer=None, return_vars=False, summary=True, name='dense'):
     if weights_initializer is None:
         # TF 2.0: tf.initializers.GlorotUniform()
         weights_initializer = tf.contrib.layers.xavier_initializer()
@@ -196,10 +195,8 @@ def dense_layer(input, num_channels, activation=tf.nn.relu,
         input = tf.reshape(input, [-1, np.prod(input_shape[1:])])
         input_shape = input.get_shape().as_list()
     input_channels = input.get_shape().as_list()[1]
-    W_dense = get_variable('W_dense', [
-                           input_channels, num_channels], initializer=weights_initializer, summary=summary)
-    b_dense = get_variable(
-        'b_dense', [num_channels], initializer=bias_initializer, summary=summary)
+    W_dense = get_variable('W_'+name, [input_channels, num_channels], initializer=weights_initializer, summary=summary)
+    b_dense = get_variable('b_'+name, [num_channels], initializer=bias_initializer, summary=summary)
     dense_out = tf.matmul(input, W_dense) + b_dense
     if activation is not None:
         dense_out = activation(dense_out)
@@ -232,17 +229,13 @@ def conv_layer(input, out_channels, filter_size, stride=1, num_groups=1, padding
     if bias_initializer is None:
         bias_initializer = tf.zeros_initializer()
 
-    shape = [filter_width, filter_height, input.get_shape().as_list()[
-        3] / num_groups, out_channels]
+    shape = [filter_width, filter_height, input.get_shape().as_list()[3] / num_groups, out_channels]
     with cond_scope(scope):
-        W_conv = get_variable(
-            'W_conv', shape, initializer=weights_initializer, summary=summary)
-        b_conv = get_variable(
-            'b_conv', [out_channels], initializer=bias_initializer, summary=summary)
+        W_conv = get_variable('W_conv', shape, initializer=weights_initializer, summary=summary)
+        b_conv = get_variable('b_conv', [out_channels], initializer=bias_initializer, summary=summary)
         if summary:
             conv_variable_summaries(W_conv)
-        conv_out = conv(input, W_conv, b_conv, stride_width,
-                        stride_height, padding, num_groups)
+        conv_out = conv(input, W_conv, b_conv, stride_width, stride_height, padding, num_groups)
         if activation is not None:
             conv_out = activation(conv_out)
         if return_vars:
@@ -303,15 +296,18 @@ def l2_regularization(coef=5e-4, var_list=None, scope='l2_regulariazation'):
 '''save & restore'''
 
 
-def restore(session, save_file, raise_if_not_found=False, restore_vars=[]):
+def restore(session, save_file, raise_if_not_found=False, restore_vars={}):
+    '''
+    restore_vars: the dict for tf saver.restore => a dict {name in ckpt : var in current graph}
+    '''
     if not os.path.exists(save_file) and raise_if_not_found:
         raise Exception('File %s not found' % save_file)
     # load stored model
     reader = tf.train.NewCheckpointReader(save_file)
     saved_shapes = reader.get_variable_to_shape_map()  # dict {op name : shape in list}
 
-    # match onto current graph
-    restored_var_names = set([v.name.split(':')[0] for v in restore_vars])
+    # matching vars in current graph to vars in file
+    restored_var_names = set([v.name.split(':')[0] for v in restore_vars.keys()])
     # restored_var_new_shape = []
     print('Restoring:')
     with tf.variable_scope(tf.get_variable_scope(), reuse=tf.AUTO_REUSE):
@@ -324,21 +320,27 @@ def restore(session, save_file, raise_if_not_found=False, restore_vars=[]):
                 continue
             var_shape = var.get_shape().as_list()  # checking shape
             if var_shape == saved_shapes[op_name]:
-                restore_vars.append(var)
                 restored_var_names.add(op_name)
-                print(str(op_name) + ' -> \t' + str(var_shape) + ' = ' + str(int(np.prod(var_shape) * 4 / 10 ** 6)) + 'MB')
+                restore_vars[op_name] = var
             else:
                 print('Shape mismatch for var', op_name, 'expected', var_shape, 'got', saved_shapes[op_name])
                 # restored_var_new_shape.append((saved_var_name, cur_var, reader.get_tensor(saved_var_name)))
                 # print('bad things')
+    # print info
+    for k, v in restore_vars.items():
+        v_name = v.name.split(':')[0]
+        v_shape = v.get_shape().as_list()
+        v_size = int(np.prod(var_shape) * 4 / 10 ** 6)
+        print('%s -> \t %s, shape %s = %dMB' % (k, v_name, str(v_shape), v_size))
+
     ignored_var_names = sorted(list(set(saved_shapes.keys()) - restored_var_names))
     print('\n')
     if len(ignored_var_names) == 0:
         print('Restored all variables')
     else:
-        print('Did not restore:\n' + '\n\t'.join(ignored_var_names))
+        print('Did not restore from ckpt:\n' + '\n\t'.join(ignored_var_names))
 
-    if len(restore_vars) > 0:
+    if restore_vars:
         saver = tf.train.Saver(restore_vars)
         saver.restore(session, save_file)
     '''

@@ -19,11 +19,31 @@ import random
 import numpy as np
 import xml.etree.ElementTree as ET
 
-DEBUG=True
+DEBUG = False
+
+class Size_Info(object):
+    def __init__(self):
+        self.cnt = 0
+        self.avg_size = np.array([0, 0])
+        self.min_size = np.array([np.inf, np.inf])
+        self.max_size = np.array([0, 0])
+    def collect(self, size):
+        self.cnt += 1
+        self.avg_size += size
+        if size[0] * size[1] > self.max_size[0] * self.max_size[1]:
+            self.max_size[0] = size[0]
+            self.max_size[1] = size[1]
+        if size[0] * size[1] < self.min_size[0] * self.min_size[1]:
+            self.min_size[0] = size[0]
+            self.min_size[1] = size[1]
+    def print(self):
+        print('avg size = ', self.avg_size / self.cnt)
+        print('max size = ', self.max_size)
+        print('min size = ', self.min_size)
 
 def main(label_type):
     wildcard = '/*/*/' if label_type == 'train' else '/*/'
-    dataset_path = '../../../data/ILSVRC2015/'
+    dataset_path = '../Data/ILSVRC2015/'
     annotationPath = dataset_path + 'Annotations/'
 
     # video Data:       ILSVRC2015/Data       /VID/[train, val, test]/[package]/[snippet ID]/[frame ID].JPEG
@@ -31,7 +51,6 @@ def main(label_type):
     video_dirs = sorted(glob.glob(annotationPath + 'VID/' + label_type + wildcard)) # all video folders
     total_image_cnt = len(glob.glob(annotationPath + 'VID/' + label_type + wildcard + '*.xml'))
 
-    bboxes = []
     classes = {
             'n01674464': 1,
             'n01662784': 2,
@@ -66,6 +85,9 @@ def main(label_type):
             }
 
     cnt = 0
+    bbox_size = Size_Info()
+    img_size = Size_Info()
+    bboxes = []
     for cur_video_dir in (video_dirs):
         path_list = cur_video_dir.strip('/').split('/')
         if label_type == 'train':
@@ -89,6 +111,11 @@ def main(label_type):
                 image = cv2.imread(img_p)
 
             labelTree = ET.parse(label_p)
+
+            cur_size = labelTree.find('size')
+            cur_size = [int(cur_size.find('width').text), int(cur_size.find('height').text)]
+            img_size.collect(cur_size)
+
             for obj in labelTree.findall('object'):
                 cur_cls = obj.find('name').text
                 assert cur_cls in classes
@@ -97,13 +124,13 @@ def main(label_type):
                 occl = int(obj.find('occluded').text)
                 track_id = int(obj.find('trackid').text)
                 bbox = obj.find('bndbox')
+                xmin, ymin = int(bbox.find('xmin').text), int(bbox.find('ymin').text)
+                xmax, ymax = int(bbox.find('xmax').text), int(bbox.find('ymax').text)
                 bbox = [package_id, video_id, frame_id, track_id,
-                        class_id, occl,
-                        int(bbox.find('xmin').text),
-                        int(bbox.find('ymin').text),
-                        int(bbox.find('xmax').text),
-                        int(bbox.find('ymax').text)]
-                bboxes.append(bbox)
+                        class_id, occl, xmin, ymin, xmax, ymax]
+
+                bbox_size.collect([xmax - xmin, ymax - ymin])  # w,h
+                # bboxes.append(bbox)
 
                 if DEBUG:
                     if track_id not in track_color:
@@ -116,6 +143,11 @@ def main(label_type):
                 cv2.waitKey(1)
             cnt += 1
 
+    print('image size:')
+    img_size.print()
+    print('bbox size:')
+    bbox_size.print()
+    return 
     # reorder by video_id, then track_id, then frame_id => all labels for a single track are next to each other
     # (matters only if a single image could have multiple tracks)
     bboxes = np.array(bboxes)

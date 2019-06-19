@@ -9,6 +9,7 @@ import numpy as np
 import tensorflow as tf
 
 from . import TF_Ops as tfops
+from . import TF_Modules as tfm
 
 class TF_Constructer(object):
     '''
@@ -66,7 +67,6 @@ class TF_Constructer(object):
             arg = getattr(self, argn)
             if not argn.startswith('_') and not isinstance(arg, types.BuiltinFunctionType):
                 print('%s = %s' % (argn, str(arg)))
-
 
 class FCN_Pipe_Constructer(TF_Constructer):
     '''
@@ -186,7 +186,7 @@ class FCN_Pipe_Constructer(TF_Constructer):
 
     def _build_output(self):
         # output
-        with tf.variable_scope('prob_out'):
+        with tf.variable_scope('pred'):
             if self.config['loss_type'] == 'crf':
                 batch_shape = tf.shape(self.logits)
                 batch_size = batch_shape[0]
@@ -199,9 +199,9 @@ class FCN_Pipe_Constructer(TF_Constructer):
                                                                         tf.fill([batch_size],
                                                                                 batch_exp_len))
                 onehot_pred = tf.one_hot(prediction, self.class_num, axis=-1)
-                self.prob_out = tf.reshape(onehot_pred, tf.shape(self.logits), name='prob_out')
+                self.pred = tf.reshape(onehot_pred, tf.shape(self.logits), name='pred')
             else:
-                self.prob_out = tf.nn.softmax(self.logits, name='prob_out')
+                self.pred = tf.nn.softmax(self.logits, name='pred')
 
     def _build_summary(self):
         if self.config['record_summary']:
@@ -381,3 +381,55 @@ class Unet_Constructer(FCN_Pipe_Constructer):
             print('=================================================================================')
         if self.config['record_summary']:
             self._build_summary()
+
+
+class Re3_Tracker(object):
+    '''
+    replicate the re3 tracking model, original paper:
+    Re3 : Real-Time Recurrent Regression Networks for Visual Tracking of Generic Objects (https://arxiv.org/abs/1705.06368)
+    '''
+    def __init__(self, class_num, tf_img, tf_label, num_unrolls=2, img_size=227, lstm_size=512,
+                 unroll_type='dynamic', bbox_encoding='mask'):
+        '''
+        tf_img: [batch, time, img_w, img_h, img_channel]
+        tf_label: [batch, time, 4] (x,y,w,h)
+        '''
+        self.tf_img = tf_img
+        self.tf_label = tf_label
+        imgnet_mean = [123.151630838, 115.902882574, 103.062623801]
+
+        assert bbox_encoding in ['mask', 'corner', 'center']  # mask: no crop; corner/center: crop
+        assert unroll_type in ['manual', 'dynamic']  # manual: one step a time; dynamic: unroll the whole sequence
+        
+        with tf.variable_scope('preprocess'):
+            if bbox_encoding == 'mask':  # prepare mask: tf_img contain img & mask
+                self.net = tf_img[0] - imgnet_mean
+                auxilary_input = tfops.conv_layer(tf_img[1], 96, 11, 4, padding='VALID', activation=None)
+                use_spp = True
+            else:  # cropping
+                self.net = tf_img - imgnet_mean
+                auxilary_input = None
+                use_spp = False
+
+        with tf.variable_scope('re3'):
+            self.net = tfm.alexnet_conv_layers(self.net, auxilary_input=auxilary_input, use_spp=use_spp)
+            if unroll_type == 'manual':
+                raise NotImplementedError
+            else:
+                self.net = tfm.re3_lstm_tracker(self.net, num_unrolls, lstm_size=512, prev_state=None)
+        self.pred = self.net
+
+        with tf.variable_scope('loss'):
+            diff = tf.reduce_sum(tf.abs(self.pred - self.tf_label, name='diff'), axis=-1) # L1 loss
+            loss = tf.reduce_mean(diff, name='loss')
+            l2_reg = tfops.l2_regularization(scope='l2_weight_penalty')
+            self.loss = loss + l2_reg
+
+    def get_train_step(self, learning_rate):
+        if not hasattr(self, 'train_step'):
+            optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
+            with tf.device('/cpu:0'):  # create cnt on cpu
+                global_step = tf.train.create_global_step()
+            self.train_step = optimizer.minimize(self.loss, global_step=global_step, var_list=tf.trainable_variables(),
+                                                colocate_gradients_with_ops=True)
+        return self.train_step

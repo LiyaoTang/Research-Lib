@@ -7,15 +7,11 @@ module: pipeline to solve data-related problem for neural net (e.g. feeding, rec
 import os
 import re
 import sys
-import h5py
-import yaml
 import time
 import warnings
 import numpy as np
 import pandas as pd
 import tensorflow as tf
-import matplotlib.image as mpimg
-import google.protobuf as protobuf
 from .base import TFRecord_Feeder, TF_CSV_Feeder, TF_TXT_Feeder, Gen_Feeder, Feeder
 
 class Img_from_Record_Feeder(TFRecord_Feeder):
@@ -198,6 +194,7 @@ class Corner_Radar_Points_Gen_Feeder(Gen_Feeder):
         super(Corner_Radar_Points_Gen_Feeder, self).__init__(data_dir, class_num, class_name, file_re, use_onehot, split)
         sys.path.append(os.path.join(data_dir, 'scripts'))
         self.ext_module['radar_objects'] = __import__('radar_objects', fromlist=[''])
+        self.ext_module['yaml'] = __import__('yaml', fromlist=[''])
         self.dataset_name = 'corner'
         self.header = header
 
@@ -243,7 +240,7 @@ class Corner_Radar_Points_Gen_Feeder(Gen_Feeder):
     def _get_car_point_id_arr(self, path):
         with open(path, 'r') as yaml_file:
             # not safe: consider safe_load (for untrusted source) / load_all (for multiple yaml obj)
-            yaml_struct = yaml.load(yaml_file)
+            yaml_struct = self.ext_module['yaml'].load(yaml_file)
 
         if yaml_struct == None:
             raise Warning(path + ' is empty')
@@ -313,7 +310,7 @@ class Corner_Radar_Points_Gen_Feeder(Gen_Feeder):
         '''
         load data in one file into a list of dict with corresponding prediction, input & picture
         '''
-
+        mpimg = __import__('matplotlib.image', fromlist=[''])
         # get input, xy, label pair
         cur_id_arr, cur_input = self._get_input(data_dir, data_name)
         xy_arr = cur_input[:, [3, 2]] # xy_arr
@@ -357,6 +354,7 @@ class Corner_Radar_Boxcenter_Gen_Feeder(Gen_Feeder):
         super(Corner_Radar_Boxcenter_Gen_Feeder, self).__init__(data_dir, class_num, class_name, file_re, use_onehot=True, split=split)
         sys.path.append(os.path.join(data_dir, 'scripts'))
         self.ext_module['radar_objects'] = __import__('radar_objects', fromlist=[''])
+        self.ext_module['yaml'] = __import__('yaml', fromlist=[''])
         self.dataset_name = 'corner'
         self.header = header
 
@@ -463,7 +461,7 @@ class Corner_Radar_Boxcenter_Gen_Feeder(Gen_Feeder):
     def _get_box_center_mask(self, path):
         with open(path, 'r') as yaml_file:
             # not safe: consider safe_load (for untrusted source) / load_all (for multiple yaml obj)
-            yaml_struct = yaml.load(yaml_file)
+            yaml_struct = self.ext_module['yaml'].load(yaml_file)
 
         if yaml_struct == None:
             raise Warning(path + ' is empty')
@@ -829,7 +827,8 @@ class Fusion_Gen_Feeder(Gen_Feeder):
                 md_path = os.path.expanduser(self.config['ext_module'][md_name])
                 sys.path.append(md_path)
                 self.config['ext_module'][md_name] = __import__(md_name, fromlist=[''])
-        
+            self.config['ext_module']['protobuf'] = __import__('google.protobuf', fromlist=[''])
+
         if 'skip' in self.config:
             if self.config['skip']:
                 self.config['skip'] = [[int(i) for i in rg.split('-')] for rg in self.config['skip'].split('|')]
@@ -893,7 +892,7 @@ class Fusion_Gen_Feeder(Gen_Feeder):
             ptxt_bt = f.read()
         rst = self.config['ext_module']['radar_label_pb2'].LabelResultData()
         try:
-            protobuf.text_format.Merge(ptxt_bt, rst)  # read from non-python
+            self.config['ext_module']['protobuf'].protobuf.text_format.Merge(ptxt_bt, rst)  # read from non-python
         except:
             rst.ParseFromString(ptxt_bt)  # read from python
 
@@ -979,6 +978,7 @@ class Fusion_Gen_Feeder(Gen_Feeder):
         '''
         return [data_dict for data_dict in self._iter_with_metadata_given_file(data_dir, data_name, pred_dir)]
 
+
 class Imagenet_VID_Feeder(Feeder):
     '''
     feeder to read from imagenet VID dataset, given a prepared list of references;
@@ -986,20 +986,35 @@ class Imagenet_VID_Feeder(Feeder):
     original reference format: [[package_id, video_id, frame_id, track_id, class_id, occludded, xmin, ymin, xmax, ymax]...]
     note: xy-min/max are in window coord => x indexing col & y indexing row 
     '''
-    def __init__(self, data_ref_path, class_num, class_name=None, use_onehot=True, mode='VOT', num_unroll=2, config={}):
+    def __init__(self, data_ref_path, class_num, class_name=None, use_onehot=True, mode='VOT', num_unroll=2, config={},
+                 img_lib='cv2'):
         super(Imagenet_VID_Feeder, self).__init__(data_ref_path, class_num, class_name, use_onehot, config)
         self.data_ref = self._load_data_ref()  # load the actual reference to data
         self.num_unroll = num_unroll
+
+        assert img_lib in ['cv2', 'skimg']
+        self.img_lib = __import__(img_loader, fromlist=[''])
+        if img_lib == 'cv2':
+            self.imread = lambda path: self.img_lib.imread(path)[:,:,::-1]  # read as RGB
+        else:
+            self.imread = lambda path: self.img_lib.imread(path)
         
         self.mode = mode  # MOT possibly contains multiple tracks in a frame
         assert self.mode in ['VOT', 'MOT']
 
-        self._solve_label = self._solve_label_mask  # default to mask encoding
+        self._solve_label = self._solve_label_center  # default to x,y,w,h encoding
         if 'label_type' in config:
+            assert config['label_type'] in ['corner', 'center']
             if config['label_type'] == 'center':
                 self._solve_label = self._solve_label_center
             elif config['label_type'] == 'corner':
                 self._solve_label = self._solve_label_corner
+
+        self._encode_bbox = self._encode_bbox_mask  # default to mask encoding
+        if 'bbox_encoding' in config:
+            assert config['bbox_encoding'] in ['mask', 'crop']
+            if config['bbox_encoding'] == 'crop':
+                self._encode_bbox = self._encode_bbox_crop
 
         self.data_split = 'train' if 'data_split' not in config else config['data_split']  # default to train set
         assert self.data_split in ['train', 'val', 'test']
@@ -1034,23 +1049,63 @@ class Imagenet_VID_Feeder(Feeder):
         # ILSVRC2015/Data       /VID/[train, val, test]/[package]/[snippet ID]/[frame ID].JPEG
         package_name = 'ILSVRC2015_VID_%s_%04d' % (self.data_split, img_ref[0])
         img_path = '%s/Data/VID/%s/%s/%08d/%06d.JPEG' % (self.data_dir, self.data_split, package_name, img_ref[1], img_ref[2])
-        img = mpimg.imread(img_path)
+        img = self.imread(img_path)
         return img
+
+    def _encode_bbox_mask(self, img, bbox):
+        img_shape = np.array(img.shape)
+        [xmin, ymin, xmax, ymax] = np.clip(bbox, 0, img_shape[[1, 0, 1, 0]]).astype(int)  # the actual region to focus
+        mask = np.zeros(shape=img_shape[[0, 1]])
+        mask[ymin:ymax, xmin:xmax] = 1
+        return img, mask
+    
+    def _encode_bbox_crop(self, img, bbox):
+        x, y = int((bbox[0] + bbox[2]) / 2), int((bbox[1] + bbox[3]) / 2)  # prevent jitter
+        w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
+        extended_bbox = [x - w, y - h, x + w, y + h]
+        cropped_img = np.zeros(shape=(2 * h, 2 * w, img.shape[-1]))
+
+        img_shape = np.array(img.shape)
+        clipped_bbox = np.clip(extended_bbox, 0, img_shape[[1, 0, 1, 0]]).astype(int)  # the actual region to crop
+        x_offset = clipped_bbox[0] - extended_bbox[0]
+        y_offset = clipped_bbox[1] - extended_bbox[1]
+
+        # crop on original img
+        [xmin, ymin, xmax, ymax] = clipped_bbox
+        cropped_img[y_offset:y_offset + 2*h, x_offset:x_offset + 2*w] = img[ymin:ymax, xmin:xmax]
+
+        return self.img_lib.resize(cropped_img, (227, 227))
+
+    @staticmethod
+    def _clip_bbox_from_ref(ref, image_shape):
+        xmin, ymin, xmax, ymax = np.clip(ref[-4], 0, image_shape[[1, 0, 1, 0]])
+        return xmin, ymin, xmax, ymax
+
+    def _solve_label_center(self, ref, image_shape):
+        xmin, ymin, xmax, ymax = self._clip_bbox_from_ref(ref, image_shape)
+        xc, yc = (xmin + xmax) / 2, (ymin + ymax) / 2
+        w = xmax - xmin
+        h = ymax - ymin
+        return np.array([xc, yc, w, h]), [xmin, ymin, xmax, ymax]
+
+    def _solve_label_corner(self, ref, image_shape):
+        xmin, ymin, xmax, ymax = self._clip_bbox_from_ref(ref, image_shape)
+        return np.array([xmin, ymin, xmax, ymax]), [xmin, ymin, xmax, ymax]
 
     def _get_input_label_pair(self, ref):
         input_seq = []
         label_seq = []
         prev_img = None
-        prev_label = None
+        prev_bbox = None
         for r in ref:  # for original_ref in constructed track/video ref
             cur_img = self._get_img(r)
-            xmin, ymin, xmax, ymax = np.clip(ref[-4:], 0, cur_img.shape[[1, 0, 1, 0]])
-            cur_label = [ref[-6], xmin, ymin, xmax, ymax]
+            cur_label, cur_bbox = self._solve_label(r, np.array(cur_img.shape))
 
-            # construct input/label seq
-            if prev_img is None:
-                prev_img = cur_img
-            input_seq.append([cur_img, prev_img])
+            if prev_bbox is None:
+                prev_bbox = cur_bbox
+
+            cur_input = self._encode_bbox(cur_img, prev_bbox)
+            input_seq.append(cur_input)
             label_seq.append(cur_label)
             
         return input_seq, label_seq
