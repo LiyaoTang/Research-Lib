@@ -441,6 +441,33 @@ class Feeder(object):
         '''
         for ref in self.data_ref:
             return self._get_input_label_pair(ref)
+    
+    def iterate_batch(self, batch_size):
+        '''
+        iterate through the dataset for once; a batch a time
+        '''
+        input_batch = []
+        label_batch = []
+        cnt = 0
+        for ref in self.data_ref:
+            cur_input, cur_label = self._get_input_label_pair(ref)
+            input_batch.append(cur_input)
+            label_batch.append(cur_label)
+            cnt += 1
+            if cnt == batch_size:
+                yield input_batch, label_batch
+                input_batch = []
+                label_batch = []
+                cnt = 0
+
+        # compelet the last batch
+        if cnt < batch_size and cnt != 0:
+            np.random.shuffle(self.data_ref)
+            for i in range(batch_size - cnt):
+                cur_input, cur_label = self._get_input_label_pair(self.data_ref[i])
+                input_batch.append(cur_input)
+                label_batch.append(cur_label)
+            yield input_batch, label_batch
 
     def iterate_with_metadata(self, ref):
         '''
@@ -520,7 +547,7 @@ class Parallel_Feeder(object):
         self.__config_lock.release()
 
     def __fill_buffur(self, data_ref):
-        # running in parallel
+        # running in parallel: use pure (stateless) function only
         data_generator = (self.__feeder._get_input_label_pair(r) for r in data_ref)
         # random.choices(data_keys, weights=[...]) for random sample
         while True:
@@ -530,24 +557,31 @@ class Parallel_Feeder(object):
                 try:
                     cur_data.append(next(data_generator))
                 except StopIteration:
+                    # renew generator
+                    np.random.shuffle(data_ref)
+                    data_generator = (self.__feeder._get_input_label_pair(r) for r in data_ref)
+                    
                     if config['warpable']: # if wrap around
-                        np.random.shuffle(data_ref)
-                        data_generator = (self.__feeder._get_input_label_pair(k) for k in data_ref)
                         cur_data.append(next(data_generator))
-                    else:  # not to wrap: stop here
+                        pass
+                    else:  # not to wrap: complete the last batch & stop here
+                        cnt = config['batch_size'] - len(cur_data)
+                        for _ in range(cnt):
+                             cur_data.append(next(data_generator))
                         config['alive'] = False
                         break
             
-            if cur_data:  # enqueue if containing data, potentially blocking
-                self.__buffer.put(cur_data)
-
+            assert len(cur_data) == config['batch_size']  # enqueue, potentially blocking
+            self.__buffer.put(cur_data)
+            
             if not config['alive']:
                 break
 
-    def iterate_data(self, timeout=5):
+    def iterate_batch(self, timeout=5):
         '''
         entry for main process: iterate through dataset for once; one batch a time
         '''
+        self.__config['wrapable'] = False
         self._create_worker() # workers start runnning
         cnt = 0
         while True:
@@ -561,7 +595,6 @@ class Parallel_Feeder(object):
                 raise
             if cnt >= len(self.__data_ref):  # finished
                 break
-        
 
     def feed_forever(self, timeout=5):
         '''

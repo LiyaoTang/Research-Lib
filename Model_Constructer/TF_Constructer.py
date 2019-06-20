@@ -388,7 +388,7 @@ class Re3_Tracker(object):
     replicate the re3 tracking model, original paper:
     Re3 : Real-Time Recurrent Regression Networks for Visual Tracking of Generic Objects (https://arxiv.org/abs/1705.06368)
     '''
-    def __init__(self, class_num, tf_img, tf_label, num_unrolls=2, img_size=227, lstm_size=512,
+    def __init__(self, tf_img, tf_label, num_unrolls=2, img_size=227, lstm_size=512,
                  unroll_type='dynamic', bbox_encoding='mask'):
         '''
         tf_img: [batch, time, img_h, img_w, img_channel]

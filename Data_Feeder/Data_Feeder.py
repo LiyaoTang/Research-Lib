@@ -986,14 +986,14 @@ class Imagenet_VID_Feeder(Feeder):
     original reference format: [[package_id, video_id, frame_id, track_id, class_id, occludded, xmin, ymin, xmax, ymax]...]
     note: xy-min/max are in window coord => x indexing col & y indexing row 
     '''
-    def __init__(self, data_ref_path, class_num, class_name=None, use_onehot=True, mode='VOT', num_unroll=2, config={},
+    def __init__(self, data_ref_path, class_num, class_name=None, use_onehot=True, mode='VOT', num_unrolls=2, config={},
                  img_lib='cv2'):
         super(Imagenet_VID_Feeder, self).__init__(data_ref_path, class_num, class_name, use_onehot, config)
         self.data_ref = self._load_data_ref()  # load the actual reference to data
-        self.num_unroll = num_unroll
+        self.num_unrolls = num_unrolls
 
         assert img_lib in ['cv2', 'skimg']
-        self.img_lib = __import__(img_loader, fromlist=[''])
+        self.img_lib = __import__(img_lib, fromlist=[''])
         if img_lib == 'cv2':
             self.imread = lambda path: self.img_lib.imread(path)[:,:,::-1]  # read as RGB
         else:
@@ -1033,16 +1033,18 @@ class Imagenet_VID_Feeder(Feeder):
             refs = refs[idx]
             
             # construct ref to track with limited unroll: [track...], where track = [original ref...]
-            for idx in range(len(refs) - self.num_unroll):
+            for idx in range(len(refs) - self.num_unrolls):
                 start = list(refs[idx][[0, 1, 3]])
-                end = list(refs[idx + self.num_unroll - 1][[0, 1, 3]])
+                end = list(refs[idx + self.num_unrolls - 1][[0, 1, 3]])
                 if start == end:  # still in the same track
-                    data_ref = refs[idx:idx + self.num_unroll]
+                    data_ref = refs[idx:idx + self.num_unrolls]
         else: # 'MOT'
             # sort first by package, then video snippet, then frame
             idx = np.lexsort((refs[:, 2], refs[:, 1], refs[:, 0]))
             refs = refs[idx]
             raise NotImplementedError
+        
+        np.random.shuffle(data_ref)
         return data_ref
 
     def _get_img(self, img_ref):
