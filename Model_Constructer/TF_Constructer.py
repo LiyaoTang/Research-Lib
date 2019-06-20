@@ -391,7 +391,7 @@ class Re3_Tracker(object):
     def __init__(self, class_num, tf_img, tf_label, num_unrolls=2, img_size=227, lstm_size=512,
                  unroll_type='dynamic', bbox_encoding='mask'):
         '''
-        tf_img: [batch, time, img_w, img_h, img_channel]
+        tf_img: [batch, time, img_h, img_w, img_channel]
         tf_label: [batch, time, 4] (x,y,w,h)
         '''
         self.tf_img = tf_img
@@ -412,10 +412,15 @@ class Re3_Tracker(object):
                 use_spp = False
 
         with tf.variable_scope('re3'):
-            self.net = tfm.alexnet_conv_layers(self.net, auxilary_input=auxilary_input, use_spp=use_spp)
+            self.net = tfm.alexnet_conv_layers(self.net, auxilary_input=auxilary_input, use_spp=use_spp)  # [B, T, feat]
             if unroll_type == 'manual':
                 raise NotImplementedError
             else:
+                # late fusion: concat feature from t, t-1
+                first_frame = self.net[:, 0:1, ...]
+                other_frame = self.net[:, :-1, ...]
+                past_frames = tf.concat([first_frame, other_frame], axis=1)  # [B,T,feat]
+                self.net = tf.concat([self.net, past_frames], axis=-1)  # [B,T,feat_t-feat_t-1]
                 self.net = tfm.re3_lstm_tracker(self.net, num_unrolls, lstm_size=512, prev_state=None)
         self.pred = self.net
 
