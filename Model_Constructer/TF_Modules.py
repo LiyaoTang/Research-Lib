@@ -84,13 +84,19 @@ def re3_lstm_tracker(input, num_unrolls, lstm_size=512, prev_state=None, rnn_typ
     TODO: migrate to TF 2.0: 
         contrib.rnn.LSTMCell -> keras.layers.LSTMCell
         contrib.rnn.LSTMStateTuple -> get_initial_tuple
-        dynamic_rnn -> keras.layers.RNN 
+        dynamic_rnn -> keras.layers.RNN
     '''
     with tf.variable_scope('fc6'):
         feat_len = input.shape.as_list()[-1]
         flatten_input = tf.reshape(input, [-1, feat_len]) # flatten as [batch x time, feat]
         fc6_out = dense_layer(flatten_input, 1024, name='fc')
-        fc6_out = tf.reshape(fc6_out, tf.stack([-1, num_unrolls, feat_len]))  # reshaped back to [batch, time, feat]
+        fc6_out = tf.reshape(fc6_out, [-1, num_unrolls, feat_len])  # reshaped back to [batch, time, feat]
+
+    # late fusion: concat feature from t, t-1
+    first_frame = fc6_out[:, 0:1, ...]
+    other_frame = fc6_out[:, :-1, ...]
+    past_frames = tf.concat([first_frame, other_frame], axis=1)  # [B,T,feat]
+    fc6_out = tf.concat([fc6_out, past_frames], axis=-1)  # [B,T,feat_t-feat_t-1]
         
     swap_memory = num_unrolls > 1
     assert rnn_type in ['lstm']

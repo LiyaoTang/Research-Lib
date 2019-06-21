@@ -11,7 +11,7 @@ from optparse import OptionParser
 
 class Default_Argumentparser(ArgumentParser):
     def __init__(self, model_group_name, dataset_name, root_dir='../../', class_num=-1, class_name='', cv_fold=0):
-        super(Default_Optparser, self).__init__()
+        super(Default_Argumentparser, self).__init__()
         # file related
         self.add_argument('--name',           dest='model_name')
         self.add_argument('--save',           dest='save_path',   default='./Model/%s/' % model_group_name)
@@ -42,14 +42,14 @@ class Default_Argumentparser(ArgumentParser):
         self.add_argument('--add_noise',  dest='add_noise',   default=False, action='store_true')
 
         # model training
-        self.add_option('-e', '--epoch',    dest='epoch', default=20, type='int')
-        self.add_option('-b', '--batch',    dest='batch', default=1,  type='int')
+        self.add_argument('-e', '--epoch',    dest='epoch', default=20, type='int')
+        self.add_argument('-b', '--batch',    dest='batch', default=1,  type='int')
     
     def parse_args(self):
         '''
         wrapper function for early assertion & parsing logic - for all model, feeder & dataset
         '''
-        args = super(Default_Optparser, self).parse_args()
+        args = super(Default_Argumentparser, self).parse_args()
 
         # legal value chk
         # TODO: change crf from loss_type into postprocess

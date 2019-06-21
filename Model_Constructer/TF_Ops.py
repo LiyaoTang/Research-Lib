@@ -393,31 +393,39 @@ def Session():
 
 
 def kernel_to_image(data, padsize=1, padval=0):
-    # Turns a convolutional kernel into an image of nicely tiled filters.
-    # Useful for viewing purposes.
+    '''
+    turns a convolutional kernel into an image of nicely tiled filters
+    useful for visualization purposes
+    '''
     if len(data.get_shape().as_list()) > 4:
-        data = tf.squeeze(data)
-    data = tf.transpose(data, (3, 0, 1, 2))
-    dataShape = tuple(data.get_shape().as_list())
-    min = tf.reduce_min(tf.reshape(
-        data, (dataShape[0], -1)), reduction_indices=1)
-    data = tf.transpose((tf.transpose(data, (1, 2, 3, 0)) - min), (3, 0, 1, 2))
-    max = tf.reduce_max(tf.reshape(
-        data, (dataShape[0], -1)), reduction_indices=1)
-    data = tf.transpose((tf.transpose(data, (1, 2, 3, 0)) / max), (3, 0, 1, 2))
+        data = tf.squeeze(data)  # remove dimension for batch
+    data = tf.transpose(data, (3, 0, 1, 2)) # filter num = out_channel, each filter takes in a patch of [w,h,in_channel]
+    data_shape = tuple(data.get_shape().as_list())
 
-    n = int(np.ceil(np.sqrt(dataShape[0])))
-    ndim = data.get_shape().ndims
-    padding = ((0, n ** 2 - dataShape[0]), (0, padsize),
-               (0, padsize)) + ((0, 0),) * (ndim - 3)
+    min = tf.reduce_min(tf.reshape(data, (data_shape[0], -1)), reduction_indices=1)  # the min of each filter
+    data = tf.transpose((tf.transpose(data, (1, 2, 3, 0)) - min), (3, 0, 1, 2))  # subtract out the min
+    max = tf.reduce_max(tf.reshape(data, (data_shape[0], -1)), reduction_indices=1)  # the scale of each filter
+    data = tf.transpose((tf.transpose(data, (1, 2, 3, 0)) / max), (3, 0, 1, 2))  # rescale
+
+    n = int(np.ceil(np.sqrt(data_shape[0])))  # num of filters reshaped into a 2D map
+    ndim = data.get_shape().ndims  # rank (4 for conv2d)
+    # (0,padsize): insert 0 along row&col to separate between filters
+    # (0, n ** 2 - data_shape[0]): to fill into a square img
+    padding = ((0, n ** 2 - data_shape[0]), (0, padsize), (0, padsize)) + ((0, 0),) * (ndim - 3)
     data = tf.pad(data, padding, mode='constant')
+
     # tile the filters into an image
-    dataShape = tuple(data.get_shape().as_list())
-    data = tf.transpose(tf.reshape(data, ((n, n) + dataShape[1:])), ((0, 2, 1, 3)
-                                                                     + tuple(range(4, ndim + 1))))
-    dataShape = tuple(data.get_shape().as_list())
-    data = tf.reshape(
-        data, ((n * dataShape[1], n * dataShape[3]) + dataShape[4:]))
+    data_shape = tuple(data.get_shape().as_list())
+    # (n, n) + data_shape[1:]): take the sqrt of 1st dim (into a square img)
+    # => an nxn image, each pixel a filter
+    data = tf.reshape(data, ((n, n) + data_shape[1:]))
+    # transpose s.t. the row of nxn image and filter are consecutive (so does col)
+    data = tf.transpose(data, ((0, 2, 1, 3) + tuple(range(4, ndim + 1))))
+    
+    # flatten out: fill the filter element into the nxn image
+    data_shape = tuple(data.get_shape().as_list())
+    flatten_shape = ((n * data_shape[1], n * data_shape[3]) + data_shape[4:])
+    data = tf.reshape(data, flatten_shape)
     return tf.image.convert_image_dtype(data, dtype=tf.uint8)
 
 
@@ -452,18 +460,16 @@ def conv_variable_summaries(var, scope=''):
     variable_summaries(var, scope)
     if len(scope) > 0:
         scope = '/' + scope
-    with tf.name_scope('conv_summaries' + scope):
+    with tf.name_scope('summaries/conv' + scope):
         varShape = var.get_shape().as_list()
         if not(varShape[0] == 1 and varShape[1] == 1):
             if varShape[2] < 3:
                 var = tf.tile(var, [1, 1, 3, 1])
                 varShape = var.get_shape().as_list()
-            summary_image = tf.expand_dims(
-                kernel_to_image(tf.slice(
-                    var, [0, 0, 0, 0], [varShape[0], varShape[1], 3, varShape[3]])),
-                0)
+            kernel_img = kernel_to_image(tf.slice(var, [0, 0, 0, 0], [varShape[0], varShape[1], 3, varShape[3]]))
+            summary_image = tf.expand_dims(kernel_img, 0)
             with tf.device('/cpu:0'):
-                tf.summary.image('filters', summary_image)
+                sum_op = tf.summary.image('filters', summary_image)
 
 
 '''variable'''

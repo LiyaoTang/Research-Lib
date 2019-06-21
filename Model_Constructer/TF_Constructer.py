@@ -68,6 +68,7 @@ class TF_Constructer(object):
             if not argn.startswith('_') and not isinstance(arg, types.BuiltinFunctionType):
                 print('%s = %s' % (argn, str(arg)))
 
+
 class FCN_Pipe_Constructer(TF_Constructer):
     '''
     construct a FCN-pipe (FCN with no downsampling) model
@@ -385,7 +386,7 @@ class Unet_Constructer(FCN_Pipe_Constructer):
 
 class Re3_Tracker(object):
     '''
-    replicate the re3 tracking model, original paper:
+    replicate & extend the re3 tracking model from paper:
     Re3 : Real-Time Recurrent Regression Networks for Visual Tracking of Generic Objects (https://arxiv.org/abs/1705.06368)
     '''
     def __init__(self, tf_img, tf_label, num_unrolls=2, img_size=227, lstm_size=512,
@@ -416,11 +417,6 @@ class Re3_Tracker(object):
             if unroll_type == 'manual':
                 raise NotImplementedError
             else:
-                # late fusion: concat feature from t, t-1
-                first_frame = self.net[:, 0:1, ...]
-                other_frame = self.net[:, :-1, ...]
-                past_frames = tf.concat([first_frame, other_frame], axis=1)  # [B,T,feat]
-                self.net = tf.concat([self.net, past_frames], axis=-1)  # [B,T,feat_t-feat_t-1]
                 self.net = tfm.re3_lstm_tracker(self.net, num_unrolls, lstm_size=512, prev_state=None)
         self.pred = self.net
 
@@ -429,6 +425,20 @@ class Re3_Tracker(object):
             loss = tf.reduce_mean(diff, name='loss')
             l2_reg = tfops.l2_regularization(scope='l2_weight_penalty')
             self.loss = loss + l2_reg
+        
+        self.summary = {}
+        with tf.variable_scope('summaries'):
+            loss_summary = [tf.summary.scalar('reg_loss', loss),
+                            tf.summary.scalar('l2_loss', l2_reg),
+                            tf.summary.scalar('full_loss', self.loss)]
+            self.summary['loss'] = tf.summary.merge(loss_summary)
+
+            conv_var_list = [v for v in tf.trainable_variables() if 'conv' in v.name and 'weight' in v.name and
+                    (v.get_shape().as_list()[0] != 1 or v.get_shape().as_list()[1] != 1)]
+            for var in conv_var_list:
+                tfops.conv_variable_summaries(var, scope=var.name.replace('/', '_')[:-2])
+            self.summary_with_images = tf.summary.merge_all()
+
 
     def get_train_step(self, learning_rate):
         if not hasattr(self, 'train_step'):

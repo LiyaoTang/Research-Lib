@@ -9,5 +9,5 @@ import control for folder Model_Constructer
 from .Model_Constructer import *
 from .TF_Constructer import *
 from .TF_Model_Loader import *
-import TF_Ops as tfops
-import TF_Modules as tfm
+from . import TF_Ops as tfops
+from . import TF_Modules as tfm
