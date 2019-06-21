@@ -1004,23 +1004,34 @@ class Imagenet_VID_Feeder(Feeder):
 
         self._solve_label = self._solve_label_center  # default to x,y,w,h encoding
         if 'label_type' in config:
-            assert config['label_type'] in ['corner', 'center']
-            if config['label_type'] == 'center':
+            label_type = config['label_type']
+            assert label_type in ['corner', 'center']
+            if label_type == 'center':
                 self._solve_label = self._solve_label_center
-            elif config['label_type'] == 'corner':
+            elif label_type == 'corner':
                 self._solve_label = self._solve_label_corner
+
+        self._norm_label = lambda h, w, img_shape: (h, w) # default to raw
+        if 'label_ratio' in config:
+            assert config['label_ratio'] in ['fix', 'dynamic', 'raw']
+            if config['label_ratio'] == 'fix':
+                self._norm_label = lambda h, w, img_shape: (h / 2270, w / 2270)
+            elif config['label_ratio'] == 'dynamic':
+                self._norm_label = lambda h, w, img_shape: (h / img_shape[0], w / img_shape[1])
 
         self._encode_bbox = self._encode_bbox_mask  # default to mask encoding
         if 'bbox_encoding' in config:
-            assert config['bbox_encoding'] in ['mask', 'crop']
+            assert config['bbox_encoding'] in ['mask', 'crop', 'mesh_mask']
             if config['bbox_encoding'] == 'crop':
                 self._encode_bbox = self._encode_bbox_crop
+            elif config['bbox_encoding'] == 'mesh_mask':
+                self._encode_bbox = self._encode_bbox_mesh_mask
 
         self.data_split = 'train' if 'data_split' not in config else config['data_split']  # default to train set
         assert self.data_split in ['train', 'val', 'test']
 
         self.data_dir = '/'.join(self.data_ref_path.strip('/').split('/')[:-1]) \
-                        if 'data_dir' not in config else config['data_dir']  # keys defaul to be directly under data dir
+                        if 'data_dir' not in config else config['data_dir']  # keys default to be directly under data dir
 
     def _load_data_ref(self):
         # TODO:should use pandas
@@ -1059,8 +1070,15 @@ class Imagenet_VID_Feeder(Feeder):
         [xmin, ymin, xmax, ymax] = np.clip(bbox, 0, img_shape[[1, 0, 1, 0]]).astype(int)  # the actual region to focus
         mask = np.zeros(shape=img_shape[[0, 1]])
         mask[ymin:ymax, xmin:xmax] = 1
-        return img, mask
+        return img, mask[...,np.newaxis]
     
+    def _encode_bbox_mesh_mask(self, img, bbox):
+        # provide network with pixel location [i,j] at each location
+        X, Y = np.meshgrid(img.shape[0], img.shape[1])
+        img, mask = self._encode_bbox_mask(img, bbox)
+        mask = np.concatenate([mask, X[..., np.newaxis], Y[..., np.newaxis]], axis=-1)
+        return img, mask
+
     def _encode_bbox_crop(self, img, bbox):
         x, y = int((bbox[0] + bbox[2]) / 2), int((bbox[1] + bbox[3]) / 2)  # prevent jitter
         w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
@@ -1085,19 +1103,23 @@ class Imagenet_VID_Feeder(Feeder):
 
     def _solve_label_center(self, ref, image_shape):
         xmin, ymin, xmax, ymax = self._clip_bbox_from_ref(ref, image_shape)
-        xc, yc = (xmin + xmax) / 2, (ymin + ymax) / 2
-        w = xmax - xmin
+        xc, yc = int((xmin + xmax) / 2), int((ymin + ymax) / 2)
         h = ymax - ymin
+        w = xmax - xmin
+        h, w = self._norm_label(h, w, image_shape)
         return np.array([xc, yc, w, h]), [xmin, ymin, xmax, ymax]
 
     def _solve_label_corner(self, ref, image_shape):
         xmin, ymin, xmax, ymax = self._clip_bbox_from_ref(ref, image_shape)
-        return np.array([xmin, ymin, xmax, ymax]), [xmin, ymin, xmax, ymax]
+        xc, yc = int((xmin + xmax) / 2), int((ymin + ymax) / 2)
+        h = ymax - ymin
+        w = xmax - xmin
+        h, w = self._norm_label(h, w, image_shape)
+        return np.array([int(xc - w / 2), int(yc - h / 2), int(xc + w / 2), int(yc + h / 2)]), [xmin, ymin, xmax, ymax]
 
     def _get_input_label_pair(self, ref):
         input_seq = []
         label_seq = []
-        prev_img = None
         prev_bbox = None
         for r in ref:  # for original_ref in constructed track/video ref
             cur_img = self._get_img(r)

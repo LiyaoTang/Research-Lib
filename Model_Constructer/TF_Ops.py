@@ -17,17 +17,16 @@ from tensorflow.python.ops import gen_nn_ops
 
 
 def remove_axis_get_shape(curr_shape, axis):
-    assert axis > 0, 'Axis must be greater than 0'
-    axis_shape = curr_shape.pop(axis)
-    curr_shape[axis - 1] *= axis_shape
+    assert axis > 0, 'axis must be greater than 0'
+    axis_shape = curr_shape.pop(axis) # the num at the to-be-remove axis
+    curr_shape[axis - 1] *= axis_shape # collected into the axis before it
     return curr_shape
 
 
 def remove_axis(input, axis):
     tensor_shape = tf.shape(input)
     curr_shape = input.get_shape().as_list()
-    curr_shape = [ss if ss is not None else tensor_shape[ii]
-                  for ii, ss in enumerate(curr_shape)]
+    curr_shape = [ss if ss is not None else tensor_shape[ii] for ii, ss in enumerate(curr_shape)]
     if type(axis) == int:
         new_shape = remove_axis_get_shape(curr_shape, axis)
     else:
@@ -48,8 +47,7 @@ def prelu(input, weights=None, initializer=tf.constant_initializer(0.25), name='
     # tf 2.0: tf.keras.layers.PReLU(): sharing parameter inside layer
     with tf.variable_scope(name):
         if weights is None:
-            weights = get_variable(
-                'weights', shape=[input.get_shape().as_list()[-1]], initializer=initializer)
+            weights = get_variable('weights', shape=[input.get_shape().as_list()[-1]], initializer=initializer)
         return tf.nn.relu(input) - weights * tf.nn.relu(-input)
 
 
@@ -296,7 +294,7 @@ def l2_regularization(coef=5e-4, var_list=None, scope='l2_regulariazation'):
 '''save & restore'''
 
 
-def restore(session, save_file, raise_if_not_found=False, restore_vars={}):
+def restore(session, save_file, restore_vars={}, raise_if_not_found=False, verbose=True):
     '''
     restore_vars: the dict for tf saver.restore => a dict {name in ckpt : var in current graph}
     '''
@@ -451,8 +449,9 @@ def variable_summaries(var, scope=''):
     with tf.name_scope('summaries' + scope):
         mean = tf.reduce_mean(var)
         with tf.device('/cpu:0'):
-            tf.summary.scalar('mean', mean)
+            sum_op = tf.summary.scalar('mean', mean)
             #tf.summary.histogram('histogram', var)
+    return sum_op
 
 
 def conv_variable_summaries(var, scope=''):
@@ -461,15 +460,16 @@ def conv_variable_summaries(var, scope=''):
     if len(scope) > 0:
         scope = '/' + scope
     with tf.name_scope('summaries/conv' + scope):
-        varShape = var.get_shape().as_list()
-        if not(varShape[0] == 1 and varShape[1] == 1):
-            if varShape[2] < 3:
+        var_shape = var.get_shape().as_list()
+        if not(var_shape[0] == 1 and var_shape[1] == 1):
+            if var_shape[2] < 3:
                 var = tf.tile(var, [1, 1, 3, 1])
-                varShape = var.get_shape().as_list()
-            kernel_img = kernel_to_image(tf.slice(var, [0, 0, 0, 0], [varShape[0], varShape[1], 3, varShape[3]]))
+                var_shape = var.get_shape().as_list()
+            kernel_img = kernel_to_image(tf.slice(var, [0, 0, 0, 0], [var_shape[0], var_shape[1], 3, var_shape[3]]))
             summary_image = tf.expand_dims(kernel_img, 0)
             with tf.device('/cpu:0'):
                 sum_op = tf.summary.image('filters', summary_image)
+    return sum_op
 
 
 '''variable'''

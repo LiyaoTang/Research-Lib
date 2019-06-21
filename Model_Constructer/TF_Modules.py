@@ -80,24 +80,12 @@ def alexnet_conv_layers(input, auxilary_input=None, prelu_initializer=tf.constan
 
 def re3_lstm_tracker(input, num_unrolls, lstm_size=512, prev_state=None, rnn_type='lstm', log=True):
     '''
-    input: object features in time sequence, expected to be [batch, time, feat], with time = num_unrolls
+    input: object features in time sequence, expected to be [batch, time, feat_t + feat_t-1], with time = num_unrolls
     TODO: migrate to TF 2.0: 
         contrib.rnn.LSTMCell -> keras.layers.LSTMCell
         contrib.rnn.LSTMStateTuple -> get_initial_tuple
         dynamic_rnn -> keras.layers.RNN
     '''
-    with tf.variable_scope('fc6'):
-        feat_len = input.shape.as_list()[-1]
-        flatten_input = tf.reshape(input, [-1, feat_len]) # flatten as [batch x time, feat]
-        fc6_out = dense_layer(flatten_input, 1024, name='fc')
-        fc6_out = tf.reshape(fc6_out, [-1, num_unrolls, feat_len])  # reshaped back to [batch, time, feat]
-
-    # late fusion: concat feature from t, t-1
-    first_frame = fc6_out[:, 0:1, ...]
-    other_frame = fc6_out[:, :-1, ...]
-    past_frames = tf.concat([first_frame, other_frame], axis=1)  # [B,T,feat]
-    fc6_out = tf.concat([fc6_out, past_frames], axis=-1)  # [B,T,feat_t-feat_t-1]
-        
     swap_memory = num_unrolls > 1
     assert rnn_type in ['lstm']
     with tf.variable_scope('lstm1'):
@@ -110,7 +98,7 @@ def re3_lstm_tracker(input, num_unrolls, lstm_size=512, prev_state=None, rnn_typ
             state1 = lstm1.zero_state(dtype=tf.float32)
 
         # unroll
-        lstm1_outputs, state1 = tf.nn.dynamic_rnn(lstm1, fc6_out, initial_state=state1, swap_memory=swap_memory)
+        lstm1_outputs, state1 = tf.nn.dynamic_rnn(lstm1, input, initial_state=state1, swap_memory=swap_memory)
         if log:
             lstmVars = [var for var in tf.trainable_variables() if 'lstm1' in var.name]
             for var in lstmVars:
@@ -126,19 +114,18 @@ def re3_lstm_tracker(input, num_unrolls, lstm_size=512, prev_state=None, rnn_typ
             state2 = lstm2.zero_state(dtype=tf.float32)
 
         # unroll
-        lstm2_inputs = tf.concat([fc6_out, lstm1_outputs], 2)
+        lstm2_inputs = tf.concat([input, lstm1_outputs], 2)
         lstm2_outputs, state2 = tf.nn.dynamic_rnn(lstm2, lstm2_inputs, initial_state=state2, swap_memory=swap_memory)
 
         if log:
-            lstmVars = [var for var in tf.trainable_variables() if 'lstm2' in var.name]
-            for var in lstmVars:
+            lstm_vars = [var for var in tf.trainable_variables() if 'lstm2' in var.name]
+            for var in lstm_vars:
                 variable_summaries(var, var.name[:-2])
 
-        # [batch, time, feat] ->  [batchxtime, feat]
-        flatten_out = tf.reshape(input, [-1, feat_len])  # flatten as [batchxtime, feat]
+        flatten_out = tf.reshape(lstm2_outputs, [-1, lstm2_outputs.get_shape().as_list()[-1]])  # flatten as [batch x time, feat]
 
     # final dense layer.
     with tf.variable_scope('fc_output'):
-        fc_output = dense_layer(flatten_out, 4, activation=None)  # [batchxtime, 4]
-        fc_output = tf.reshape(fc_output, [-1, num_unrolls, feat_len])  #  [batch, time, 4]
-    return fc_output, state1, state2
+        fc_output = dense_layer(flatten_out, 4, activation=None)  # [batch x time, 4]
+        fc_output = tf.reshape(fc_output, [-1, num_unrolls, 4])  #  [batch, time, 4]
+    return fc_output, (state1, state2)

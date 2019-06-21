@@ -38,6 +38,7 @@ parser.add_argument('--unroll_type', default='dynamic', type=str, dest='unroll_t
 parser.add_argument('--bbox_encoding', default='mask', type=str, dest='bbox_encoding')
 parser.add_argument('--restore', default=True, type=bool, dest='restore')
 
+parser.add_argument('--lrn_rate', default=None, type=int, dest='lrn_rate')
 parser.add_argument('--buffer_size', default=5, type=int, dest='buffer_size')
 parser.add_argument('--worker_num', default=1, type=int, dest='worker_num')
 parser.add_argument('--epoch', default=20, type=int, dest='epoch')
@@ -87,12 +88,16 @@ if args.tf_dataset:
     # feeder_gen = para_train_feeder.iterate_batch()
 
 else:
-    tf_img = tf.placeholder(tf.uint8, shape=[args.batch_size, args.num_unrolls, args.img_size, args.img_size, args.channel_size])
+    tf_img = tf.placeholder(tf.uint8, shape=[args.batch_size, args.num_unrolls, args.img_size, args.img_sizeimg_size, args.channel_size])
     tf_label = tf.placeholder(tf.float32, shape=[args.batch_size, args.num_unrolls, 4])
 
 
 ''' construct model '''
 
+
+sess = constructer.tfops.Session()
+saver = tf.train.Saver()
+longSaver = tf.train.Saver()
 
 tracker = constructer.Re3_Tracker(tf_img, tf_label,
                                   num_unrolls=args.num_unrolls,
@@ -100,8 +105,27 @@ tracker = constructer.Re3_Tracker(tf_img, tf_label,
                                   lstm_size=args.lstm_size,
                                   unroll_type=args.unroll_type,
                                   bbox_encoding=args.bbox_encoding)
-train_step = tracker.get_train_step()
+learning_rate = tf.placeholder(tf.float32) if args.lrn_rate is None else args.lrn_rate
+train_step = tracker.get_train_step(learning_rate)
+train_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES)
+summary_op = tracker.summary['all']
 
+# logging validation
+val_scope = 'val'
+with tf.variable_scope(val_scope):
+    robustness_ph = tf.placeholder(tf.float32, shape=[])
+    lost_targets_ph = tf.placeholder(tf.float32, shape=[])
+    mean_iou_ph = tf.placeholder(tf.float32, shape=[])
+    avg_ph = tf.placeholder(tf.float32, shape=[])
+    val_tracker = constructer.Re3_Tracker(tf_img, tf_label,
+                                        num_unrolls=args.num_unrolls,
+                                        img_size=args.img_size,
+                                        lstm_size=args.lstm_size,
+                                        unroll_type=args.unroll_type,
+                                        bbox_encoding=args.bbox_encoding)
+    val_vars = list(tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=val_scope))
+    restore_dict = dict([v.name.strip(val_scope + '/').split(':')[0] for v in val_vars], val_vars)
+    val_model = constructer.Val_Model(sess, val_tracker, feeder, recorder, var_dict=restore_dict)
 
 ''' training '''
 
@@ -114,11 +138,6 @@ def train_tfdataset(tf_img):
     pass
 
 train_func = train_tfdataset if args.tf_dataset else train
-
-sess = constructer.tfops.Session()
-train_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES)
-saver = tf.train.Saver()
-longSaver = tf.train.Saver()
 
 # initialize/restore
 global_step = 0

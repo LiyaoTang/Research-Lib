@@ -389,14 +389,23 @@ class Re3_Tracker(object):
     replicate & extend the re3 tracking model from paper:
     Re3 : Real-Time Recurrent Regression Networks for Visual Tracking of Generic Objects (https://arxiv.org/abs/1705.06368)
     '''
-    def __init__(self, tf_img, tf_label, num_unrolls=2, img_size=227, lstm_size=512,
+    def __init__(self, tf_img, tf_label, num_unrolls, encode_bbox_func, img_size=227, lstm_size=512,
                  unroll_type='dynamic', bbox_encoding='mask'):
         '''
-        tf_img: [batch, time, img_h, img_w, img_channel]
+        tf_img: [batch, time, img_h, img_w, img_channel] for bbox_encoding='mask', 
+                [batch, time, 2, img_h, img_w, img_channel] for bbox_encoding in ['corner', 'center']
         tf_label: [batch, time, 4] (x,y,w,h)
+        num_unrolls: int to determine sequence len of current batch
         '''
         self.tf_img = tf_img
         self.tf_label = tf_label
+        self.num_unrolls = num_unrolls
+        self.encode_bbox_func = encode_bbox_func  # used in inference on new video
+
+        self.img_size = img_size
+        self.lstm_size = lstm_size
+        self.unroll_type = unroll_type
+        self.bbox_encoding = bbox_encoding
         imgnet_mean = [123.151630838, 115.902882574, 103.062623801]
 
         assert bbox_encoding in ['mask', 'corner', 'center']  # mask: no crop; corner/center: crop
@@ -405,20 +414,43 @@ class Re3_Tracker(object):
         with tf.variable_scope('preprocess'):
             if bbox_encoding == 'mask':  # prepare mask: tf_img contain img & mask
                 self.net = tf_img[0] - imgnet_mean
+                self.tf_img = self.tf_img[0]
                 auxilary_input = tfops.conv_layer(tf_img[1], 96, 11, 4, padding='VALID', activation=None)
                 use_spp = True
+                img_size = tf.shape(self.net)
             else:  # cropping
                 self.net = tf_img - imgnet_mean
                 auxilary_input = None
                 use_spp = False
+            self.net = tf.reshape(self.net, (-1, img_size[-3], img_size[-2], 3))  # [-1, img_h, img_w, img_channel]
 
         with tf.variable_scope('re3'):
-            self.net = tfm.alexnet_conv_layers(self.net, auxilary_input=auxilary_input, use_spp=use_spp)  # [B, T, feat]
+            self.net = tfm.alexnet_conv_layers(self.net, auxilary_input=auxilary_input, use_spp=use_spp) # [-1, feat]
+
+            with tf.variable_scope('fc6'):
+                self.net = tfops.dense_layer(self.net, 1024, name='fc')  # [-1,feat=1024]
+                feat_len = self.net.get_shape.as_list()[-1]
+
+            if bbox_encoding == 'mask':
+                self.net = tf.reshape(self.net, [-1, num_unrolls, feat_len])  # reshaped back to [batch, time, feat]
+                # late fusion: concat feature from t, t-1
+                first_frame = self.net[:, 0:1, ...]
+                other_frame = self.net[:, :-1, ...]
+                past_frames = tf.concat([first_frame, other_frame], axis=1)  # [batch, time, feat]
+                self.net = tf.concat([self.net, past_frames], axis=-1)  # [batch, time, feat_t + feat_t-1]
+            else:
+                self.net = tf.reshape(self.net, [-1, num_unrolls, 2, feat_len])  # [batch, time, 2, feat]
+                self.net = tfops.remove_axis(self.net, 3)  # [batch, time, feat_t + feat_t-1]
+
             if unroll_type == 'manual':
                 raise NotImplementedError
             else:
-                self.net = tfm.re3_lstm_tracker(self.net, num_unrolls, lstm_size=512, prev_state=None)
-        self.pred = self.net
+                self.net, state = tfm.re3_lstm_tracker(self.net, num_unrolls, lstm_size=lstm_size, prev_state=None)  # [batch, time, 4]
+        self.state = state
+        self.logits = self.net
+        
+        with tf.variable_scope('pred'):
+            self.pred = self.logits  # [batch, time, 4], 4=x,y,w,h
 
         with tf.variable_scope('loss'):
             diff = tf.reduce_sum(tf.abs(self.pred - self.tf_label, name='diff'), axis=-1) # L1 loss
@@ -426,7 +458,7 @@ class Re3_Tracker(object):
             l2_reg = tfops.l2_regularization(scope='l2_weight_penalty')
             self.loss = loss + l2_reg
         
-        self.summary = {}
+        self.summary = {'loss': None, 'conv': None, 'all': None}
         with tf.variable_scope('summaries'):
             loss_summary = [tf.summary.scalar('reg_loss', loss),
                             tf.summary.scalar('l2_loss', l2_reg),
@@ -434,11 +466,10 @@ class Re3_Tracker(object):
             self.summary['loss'] = tf.summary.merge(loss_summary)
 
             conv_var_list = [v for v in tf.trainable_variables() if 'conv' in v.name and 'weight' in v.name and
-                    (v.get_shape().as_list()[0] != 1 or v.get_shape().as_list()[1] != 1)]
-            for var in conv_var_list:
-                tfops.conv_variable_summaries(var, scope=var.name.replace('/', '_')[:-2])
-            self.summary_with_images = tf.summary.merge_all()
-
+                                (v.get_shape().as_list()[0:2] != 1 or v.get_shape().as_list()[1] != 1)]
+            conv_sum_op = [tfops.conv_variable_summaries(var, scope=var.name.replace('/', '_')[:-2]) for var in conv_var_list]
+            self.summary['conv'] = tf.summary.merge(conv_sum_op)
+        self.summary['all'] = tf.summary.merge_all()
 
     def get_train_step(self, learning_rate):
         if not hasattr(self, 'train_step'):
@@ -448,3 +479,49 @@ class Re3_Tracker(object):
             self.train_step = optimizer.minimize(self.loss, global_step=global_step, var_list=tf.trainable_variables(),
                                                 colocate_gradients_with_ops=True)
         return self.train_step
+
+    def inference(self, track, bboxes, sess):
+        '''
+        given a single track, output inferenced track result (bbox)
+        '''
+        prev_state = [np.zeros((1, self.lstm_size)) for _ in range(4)]
+        bbox = bboxes[0]  # the initial box
+        for img in track:
+            img = self.encode_bbox_func(img, bbox)
+            feed_dict = {
+                self.num_unrolls: 1
+                self.tf_img: [img]
+                self.state: [[], []]
+            }
+            sess.run()
+
+
+
+class Val_Model(object):
+    '''
+    run validation for model in a separate thread
+    '''
+    def __init__(self, sess, model, feeder, recorder, var_dict):
+        '''
+        sess: current active session
+        model: a graph same as & separate from the one being trained
+        var_dict: ckpt var -> var in model for validation
+        '''
+        self.threading = __import__('threading', fromlist=[''])
+        self.sess = sess
+        self.model = model
+        self.feeder = feeder
+        self.recorder = recorder
+        self.var_dict = var_dict
+
+    def record_val(self, ckpt_path):
+        '''
+        run the model inference and record the result
+        '''
+        saver = tf.train.Saver(self.var_dict)
+        saver.restore(session, ckpt_path)
+        for cur_input, cur_label in self.feeder.iterate_data():
+            pred = self.model.inference(cur_input, cur_label, self.sess)
+
+
+
