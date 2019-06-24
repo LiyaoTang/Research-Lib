@@ -435,6 +435,12 @@ class Feeder(object):
     def _get_input_label_pair(self, ref):
         raise NotImplementedError
 
+    def decode_label(self, input, label):
+        '''
+        decode the label with potential usage of input info
+        '''
+        raise NotImplementedError
+
     def iterate_data(self):
         '''
         iterate through the dataset for once; one example a time
@@ -472,7 +478,7 @@ class Feeder(object):
     def iterate_forever(self, batch_size=None):
         if batch_size:
             while True:
-                yield from self.iterate_batch()
+                yield from self.iterate_batch(batch_size)
         else:
             data_gen = self.iterate_data()
             while True:
@@ -483,7 +489,7 @@ class Feeder(object):
                     data_gen = self.iterate_data()
                     pass
 
-    def iterate_with_metadata(self, ref):
+    def iterate_with_metadata(self):
         '''
         iterate over data with corresponding meta data
         '''

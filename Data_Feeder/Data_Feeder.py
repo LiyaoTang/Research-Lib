@@ -1001,22 +1001,25 @@ class Imagenet_VID_Feeder(Feeder):
         self.mode = mode  # MOT possibly contains multiple tracks in a frame
         assert self.mode in ['VOT', 'MOT']
 
-        self._solve_label = self._solve_label_center  # default to x,y,w,h encoding
+        self._solve_label = self._solve_label_center  # default to center encoding (xywh)
+        self.decode_label = self._decode_label_center
         if 'label_type' in config:
             label_type = config['label_type']
             assert label_type in ['corner', 'center']
-            if label_type == 'center':
-                self._solve_label = self._solve_label_center
-            elif label_type == 'corner':
+            if label_type == 'corner':
                 self._solve_label = self._solve_label_corner
+                self.decode_label = self._decode_label_corner
 
-        self._norm_label = lambda h, w, img_shape: (h, w) # default to raw
+        self._norm_label = lambda bbox, img_shape: bbox  # default to raw
+        self._denorm_label = lambda bbox, img_shape: bbox
         if 'label_ratio' in config:
             assert config['label_ratio'] in ['fix', 'dynamic', 'raw']
             if config['label_ratio'] == 'fix':
-                self._norm_label = lambda h, w, img_shape: (h / 2270, w / 2270)
+                self._norm_label = lambda bbox, img_shape: bbox / 2270
+                self._denorm_label = lambda bbox, img_shape: bbox * 2270
             elif config['label_ratio'] == 'dynamic':
-                self._norm_label = lambda h, w, img_shape: (h / img_shape[0], w / img_shape[1])
+                self._norm_label = lambda bbox, img_shape: bbox / img_shape[[1, 0, 1, 0]]
+                self._denorm_label = lambda bbox, img_shape: bbox * img_shape[[1, 0, 1, 0]]
 
         self._encode_bbox = self._encode_bbox_mask  # default to mask encoding
         if 'bbox_encoding' in config:
@@ -1025,6 +1028,7 @@ class Imagenet_VID_Feeder(Feeder):
                 self._encode_bbox = self._encode_bbox_crop
             elif config['bbox_encoding'] == 'mesh_mask':
                 self._encode_bbox = self._encode_bbox_mesh_mask
+
 
         self.data_split = 'train' if 'data_split' not in config else config['data_split']  # default to train set
         assert self.data_split in ['train', 'val', 'test']
@@ -1104,21 +1108,36 @@ class Imagenet_VID_Feeder(Feeder):
         xmin, ymin, xmax, ymax = np.clip(ref[-4], 0, image_shape[[1, 0, 1, 0]])
         return xmin, ymin, xmax, ymax
 
+    def _xyxy_to_xywh(self, xyxy):
+        xc, yc = int((xyxy[0] + xyxy[2]) / 2), int((xyxy[1] + xyxy[3]) / 2)  # xmin, ymin, xmax, ymax
+        h = xyxy[3] - xyxy[1]
+        w = xyxy[2] - xyxy[0]
+        return xc, yc, w, h
+
     def _solve_label_center(self, ref, image_shape):
-        xmin, ymin, xmax, ymax = self._clip_bbox_from_ref(ref, image_shape)
-        xc, yc = int((xmin + xmax) / 2), int((ymin + ymax) / 2)
-        h = ymax - ymin
-        w = xmax - xmin
-        h, w = self._norm_label(h, w, image_shape)
-        return np.array([xc, yc, w, h]), [xmin, ymin, xmax, ymax]
+        xyxy_box = self._clip_bbox_from_ref(ref, image_shape)
+        xywh_box = self._xyxy_to_xywh(xyxy_box)
+        bbox = self._norm_label(np.array(xywh_box), image_shape)
+        return bbox, xyxy_box
 
     def _solve_label_corner(self, ref, image_shape):
-        xmin, ymin, xmax, ymax = self._clip_bbox_from_ref(ref, image_shape)
-        xc, yc = int((xmin + xmax) / 2), int((ymin + ymax) / 2)
-        h = ymax - ymin
-        w = xmax - xmin
-        h, w = self._norm_label(h, w, image_shape)
-        return np.array([int(xc - w / 2), int(yc - h / 2), int(xc + w / 2), int(yc + h / 2)]), [xmin, ymin, xmax, ymax]
+        xyxy_box = self._clip_bbox_from_ref(ref, image_shape)
+        bbox = self._norm_label(np.array([xyxy_box]), image_shape)
+        return bbox, xyxy_box
+
+    def _decode_label_center(self, input, label):
+        bbox_list = []
+        for img, l in zip(input, label):
+            bbox = self._denorm_label(np.array(l), np.array(img.shape)).astype(int)
+            bbox_list.append(bbox)
+        return bbox_list
+    
+    def _decode_label_corner(self, input, label):
+        bbox_list = []
+        for img, l in zip(input, label):
+            xyxy_box = self._denorm_label(np.array(l), np.array(img.shape)) # xyxy
+            bbox_list.append(self._xyxy_to_xywh(xyxy_box))
+        return bbox_list
 
     def _get_input_label_pair(self, ref):
         input_seq = []
@@ -1134,6 +1153,30 @@ class Imagenet_VID_Feeder(Feeder):
             cur_input = self._encode_bbox(cur_img, prev_bbox)
             input_seq.append(cur_input)
             label_seq.append(cur_label)
-            
         return input_seq, label_seq
 
+    def _get_input_label_bbox(self, ref):
+        input_seq = []
+        label_seq = []
+        bbox_seq = []
+        prev_bbox = None
+        for r in ref:  # for original_ref in constructed track/video ref
+            cur_img = self._get_img(r)
+            cur_label, cur_bbox = self._solve_label(r, np.array(cur_img.shape))
+            bbox_seq.append(cur_bbox)
+
+            if prev_bbox is None:
+                prev_bbox = cur_bbox
+
+            cur_input = self._encode_bbox(cur_img, prev_bbox)
+            input_seq.append(cur_input)
+            label_seq.append(cur_label)
+            
+        return input_seq, label_seq, bbox_seq
+
+    def iterate_with_metadata(self):
+        '''
+        iterate through dataset, each time produce a track of: img, label, original bbox (xyxy)
+        '''
+        for ref in self.data_ref:
+            yield self._get_input_label_bbox(ref)

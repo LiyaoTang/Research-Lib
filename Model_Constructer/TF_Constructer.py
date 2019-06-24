@@ -514,7 +514,7 @@ class Val_Model(object):
     '''
     run validation for model in a separate thread
     '''
-    def __init__(self, sess, model, feeder, recorder, var_dict):
+    def __init__(self, sess, model, feeder, recorder, var_dict, config={}):
         '''
         sess: current active session
         model: a graph same as & separate from the one being trained
@@ -526,6 +526,8 @@ class Val_Model(object):
         self.feeder = feeder
         self.recorder = recorder
         self.var_dict = var_dict
+        self.config = config
+        self.eval_cnt = 0
 
     def record_val(self, ckpt_path):
         '''
@@ -535,6 +537,20 @@ class Val_Model(object):
         saver.restore(self.sess, ckpt_path)
         for cur_input, cur_label in self.feeder.iterate_data():
             pred = self.model.inference(cur_input, cur_label, self.sess)
-            self.recorder.accumulate_rst(cur_label, self.feeder.)
+            label = self.feeder.decode_label(cur_input, cur_label)
+            self.recorder.accumulate_rst(label, pred)
 
+        if 'print' in self.config and self.config['print']: # print out
+            self.recorder.print_result()
 
+        if 'summary' in self.config:  # write to tf summary if provided
+            rst_record = self.recorder.get_result()
+            feed_dict = {}
+            for n in rst_record:
+                tf_placeholder = self.config['summary']['placeholder'][n]
+                feed_dict[tf_placeholder] = rst_record[n]
+            tf_summary_op = self.config['summary']['op']
+            cur_summary = self.sess.run([tf_summary_op], feed_dict=feed_dict)
+            self.config['summary']['writer'].add_summary(cur_summary, global_step=self.eval_cnt)
+            self.config['summary']['writer'].flush()
+        self.eval_cnt += 1

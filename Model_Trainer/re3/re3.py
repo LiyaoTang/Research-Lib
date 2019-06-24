@@ -193,7 +193,8 @@ def run_train_step_feeddict(input_batch, label_batch, display=False):
     # write summary
     cur_summary = op_output[1:]
     if cur_summary:
-        summary_writer.add_summary(cur_summary)
+        for s in cur_summary:
+            summary_writer.add_summary(s, global_step=global_step)
 
     # save new ckpt (over-write old one)
     if global_step % 500 == 0:
