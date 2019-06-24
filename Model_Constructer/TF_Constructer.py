@@ -389,8 +389,8 @@ class Re3_Tracker(object):
     replicate & extend the re3 tracking model from paper:
     Re3 : Real-Time Recurrent Regression Networks for Visual Tracking of Generic Objects (https://arxiv.org/abs/1705.06368)
     '''
-    def __init__(self, tf_img, tf_label, num_unrolls, encode_bbox_func, img_size=227, lstm_size=512,
-                 unroll_type='dynamic', bbox_encoding='mask'):
+    def __init__(self, tf_img, tf_label, num_unrolls, prev_state, encode_bbox_func, decode_bbox_func,
+                 img_size=227, lstm_size=512, unroll_type='dynamic', bbox_encoding='mask'):
         '''
         tf_img: [batch, time, img_h, img_w, img_channel] for bbox_encoding='mask', 
                 [batch, time, 2, img_h, img_w, img_channel] for bbox_encoding in ['corner', 'center']
@@ -400,7 +400,11 @@ class Re3_Tracker(object):
         self.tf_img = tf_img
         self.tf_label = tf_label
         self.num_unrolls = num_unrolls
-        self.encode_bbox_func = encode_bbox_func  # used in inference on new video
+        self.prev_state = prev_state
+
+        # used in inference on new video
+        self.encode_bbox_func = encode_bbox_func
+        self.decode_bbox_func = decode_bbox_func
 
         self.img_size = img_size
         self.lstm_size = lstm_size
@@ -408,7 +412,7 @@ class Re3_Tracker(object):
         self.bbox_encoding = bbox_encoding
         imgnet_mean = [123.151630838, 115.902882574, 103.062623801]
 
-        assert bbox_encoding in ['mask', 'corner', 'center']  # mask: no crop; corner/center: crop
+        assert bbox_encoding in ['mask', 'mesh', 'corner', 'center']  # mesh/mask: no crop; corner/center: crop
         assert unroll_type in ['manual', 'dynamic']  # manual: one step a time; dynamic: unroll the whole sequence
         
         with tf.variable_scope('preprocess'):
@@ -445,8 +449,9 @@ class Re3_Tracker(object):
             if unroll_type == 'manual':
                 raise NotImplementedError
             else:
-                self.net, state = tfm.re3_lstm_tracker(self.net, num_unrolls, lstm_size=lstm_size, prev_state=None)  # [batch, time, 4]
-        self.state = state
+                # output as bbox regress: [batch, time, 4]
+                self.net, state = tfm.re3_lstm_tracker(self.net, num_unrolls, lstm_size=lstm_size, prev_state=self.prev_state)
+        self.lstm_state = [*state[0], *state[1]]
         self.logits = self.net
         
         with tf.variable_scope('pred'):
@@ -458,17 +463,22 @@ class Re3_Tracker(object):
             l2_reg = tfops.l2_regularization(scope='l2_weight_penalty')
             self.loss = loss + l2_reg
         
-        self.summary = {'loss': None, 'conv': None, 'all': None}
+        self.summary = {'loss': None, 'conv': None, 'lstm': None, 'all': None}
         with tf.variable_scope('summaries'):
             loss_summary = [tf.summary.scalar('reg_loss', loss),
                             tf.summary.scalar('l2_loss', l2_reg),
                             tf.summary.scalar('full_loss', self.loss)]
             self.summary['loss'] = tf.summary.merge(loss_summary)
 
-            conv_var_list = [v for v in tf.trainable_variables() if 'conv' in v.name and 'weight' in v.name and
-                                (v.get_shape().as_list()[0:2] != 1 or v.get_shape().as_list()[1] != 1)]
-            conv_sum_op = [tfops.conv_variable_summaries(var, scope=var.name.replace('/', '_')[:-2]) for var in conv_var_list]
-            self.summary['conv'] = tf.summary.merge(conv_sum_op)
+            conv_vars = [v for v in tf.trainable_variables() if 'conv' in v.name and 'weight' in v.name and
+                         (v.get_shape().as_list()[0:2] != 1 or v.get_shape().as_list()[1] != 1)]
+            conv_summary = [tfops.conv_variable_summaries(var, scope=var.name.replace('/', '_')[:-2]) for var in conv_vars]
+            self.summary['conv'] = tf.summary.merge(conv_summary)
+
+            lstm_vars = [var for var in tf.trainable_variables() if 'lstm1' in var.name or 'lstm2' in var.name]
+            lstm_summary = [tfops.variable_summaries(var, var.name[:-2]) for var in lstm_vars]
+            self.summary['lstm'] = tf.summary.merge(lstm_summary)
+
         self.summary['all'] = tf.summary.merge_all()
 
     def get_train_step(self, learning_rate):
@@ -480,21 +490,24 @@ class Re3_Tracker(object):
                                                 colocate_gradients_with_ops=True)
         return self.train_step
 
-    def inference(self, track, bboxes, sess):
+    def inference(self, track, bboxes, sess, display_func=None):
         '''
-        given a single track, output inferenced track result (bbox)
+        given a single track, output inferenced track result (bbox in xywh)
         '''
         prev_state = [np.zeros((1, self.lstm_size)) for _ in range(4)]
-        bbox = bboxes[0]  # the initial box
+        out_bbox = [bboxes[0]]  # the initial box
         for img in track:
-            img = self.encode_bbox_func(img, bbox)
+            if display_func:
+                display_func(img, out_bbox[-1])
+            img = self.encode_bbox_func(img, out_bbox[-1])
             feed_dict = {
-                self.num_unrolls: 1
-                self.tf_img: [img]
-                self.state: [[], []]
+                self.tf_img: [img],
+                self.num_unrolls: 1,
+                self.prev_state: prev_state,
             }
-            sess.run()
-
+            pred, prev_state = sess.run([self.pred, self.lstm_state], feed_dict=feed_dict)
+            out_bbox.append(self.decode_bbox_func(pred))
+        return out_bbox
 
 
 class Val_Model(object):
@@ -519,9 +532,9 @@ class Val_Model(object):
         run the model inference and record the result
         '''
         saver = tf.train.Saver(self.var_dict)
-        saver.restore(session, ckpt_path)
+        saver.restore(self.sess, ckpt_path)
         for cur_input, cur_label in self.feeder.iterate_data():
             pred = self.model.inference(cur_input, cur_label, self.sess)
-
+            self.recorder.accumulate_rst(cur_label, self.feeder.)
 
 

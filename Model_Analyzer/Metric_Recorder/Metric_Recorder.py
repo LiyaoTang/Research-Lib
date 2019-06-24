@@ -15,28 +15,16 @@ import matplotlib.pyplot as plt
 from collections import defaultdict
 
 class Metric_Record(object):
-    def __init__(self, class_num, class_name=None):
-
-        self.class_num = class_num
-        if class_name is None:
-            class_name = dict(zip(range(class_num), [str(n) for n in range(class_num)]))
-        elif not (type(class_name) is dict):  # treat as iterable
-            class_name = dict(zip(range(class_num), class_name))
-        self.class_name = class_name
-
-    def _to_onehot(self, label_list):
-        height = len(label_list)
-        label = np.zeros((height, self.class_num), dtype=int)
-        label[np.arange(height), label_list] = 1
-        return label
+    def __init__(self):
+        pass
 
     def eval_statistics(self, *args, **kwargs):
         '''
-        evaluate model for the given example (prediction-label pair)
+        evaluate for the given example (prediction-label pair)
         '''
         raise NotImplementedError
 
-    def _accumulate_rst(self, *args, **kwargs):
+    def accumulate_rst(self, *args, **kwargs):
         '''
         accumulate the result over the whole dataset
         '''
@@ -47,6 +35,12 @@ class Metric_Record(object):
         evaluate the model over the whole dataset
         '''
         raise NotImplementedError
+
+    def get_result(self, *args, **kwargs):
+        '''
+        calculate and return the result of evaluation
+        '''
+        raise NotImplementedError
     
         
 class Classif_Metric_Record(Metric_Record):
@@ -55,7 +49,13 @@ class Classif_Metric_Record(Metric_Record):
     '''
 
     def __init__(self, class_num, class_name=None, record_prob=False, title=''):
-        super(Classif_Metric_Record, self).__init__(class_num, class_name)
+        super(Classif_Metric_Record, self).__init__()
+        self.class_num = class_num
+        if class_name is None:
+            class_name = dict(zip(range(class_num), [str(n) for n in range(class_num)]))
+        elif not (type(class_name) is dict):  # treat as iterable
+            class_name = dict(zip(range(class_num), class_name))
+        self.class_name = class_name
 
         self.record_prob = record_prob  # record config
 
@@ -68,6 +68,12 @@ class Classif_Metric_Record(Metric_Record):
 
         # model evolution curve (over epoches)
         self.balanced_acc_curve = []
+
+    def _to_onehot(self, label_list):
+        height = len(label_list)
+        label = np.zeros((height, self.class_num), dtype=int)
+        label[np.arange(height), label_list] = 1
+        return label
 
     def _cal_confusion_matrix(self, pred_flat, label_flat):
         '''
@@ -110,7 +116,7 @@ class Classif_Metric_Record(Metric_Record):
         return {'avg_precision': average_precision, 'auc_score': auc_score, 'balanced_acc': balanced_acc,
                 'overall_balanced_acc': overall_balanced_acc, 'confusion_matrix': confusion_matrix, 'mean_prob_matrix': mean_prob_matrix}
 
-    def _accumulate_rst(self, prob_pred, label, is_onehot=True, record_prob=False):
+    def accumulate_rst(self, prob_pred, label, is_onehot=True, record_prob=False):
         '''
         prob_pred and label assumed to be np array with pred/label at last axis
         prob_pred is assumed to be one-hot; label encoding specified by `is_onehot`
@@ -314,7 +320,7 @@ class TF_Classif_Record(Classif_Metric_Record):
                 [prob_pred, label] = self.sess.run([self.tf_pred, self.tf_label],
                                                    feed_dict=self.tf_feed_dict)
 
-                self._accumulate_rst(prob_pred=prob_pred, label=label)
+                self.accumulate_rst(prob_pred=prob_pred, label=label)
 
         except tf.errors.OutOfRangeError:
             pass
@@ -336,18 +342,51 @@ class General_Classif_Record(Classif_Metric_Record):
         '''
         for batch_input, batch_label in input_label_itr():
             prob_pred = model_func(batch_input, batch_label)
-            self._accumulate_rst(prob_pred=prob_pred, label=batch_label, is_onehot=is_onehot, record_prob=self.record_prob)
+            self.accumulate_rst(prob_pred=prob_pred, label=batch_label, is_onehot=is_onehot, record_prob=self.record_prob)
         self._cal_stat_on_rstrecord(self.record_prob)
 
     def evaluate_model_at_once(self, prob_pred, label, is_onehot=True):
         '''
         pass in directly probablistic pred & label
         '''
-        self._accumulate_rst(prob_pred=prob_pred, label=label, is_onehot=is_onehot, record_prob=True)
+        self.accumulate_rst(prob_pred=prob_pred, label=label, is_onehot=is_onehot, record_prob=True)
         self._cal_stat_on_rstrecord(record_prob=True)
 
 
 class Bounding_Box(object):
+    def __init__(self, box_def, def_type='xywh'):
+        if def_type == 'xywh':
+            self.x_var = [box_def[0] - int(box_def[2] / 2), box_def[0] + int(box_def[2] / 2)]
+            self.y_var = [box_def[1] - int(box_def[3] / 2), box_def[1] + int(box_def[3] / 2)]
+            self.w = box_def[2]
+            self.h = box_def[3]
+        elif def_type == 'xyxy':
+            self.x_var = [box_def[0], box_def[2]]
+            self.y_var = [box_def[1], box_def[3]]
+            self.w = box_def[2] - box_def[0]
+            self.h = box_def[3] - box_def[1]
+        else:
+            raise TypeError
+
+    @staticmethod
+    def overlap_interval(int_1, int_2):
+        '''
+        calculate the overlaped interval of 2 intervals ([0] for min, [1] for max)
+        '''
+        return max(0, min(int_1[1], int_2[1]) - max(int_1[0], int_2[0]))
+
+    def intersection(self, bbox):
+        sec_x = self.overlap_interval(self.x_var, bbox.x_var)
+        sec_y = self.overlap_interval(self.y_var, bbox.y_var)
+        return sec_x * sec_y
+
+    def IoU(self, bbox):
+        i = self.intersection(bbox)
+        u = self.w * self.h + bbox.w * bbox.h - i
+        return i / u
+
+
+class Det_Bounding_Box(object):
     def __init__(self, box_def):
         if type(box_def) is list:
             self.__init_from_list(box_def)
@@ -416,8 +455,8 @@ class Bounding_Box(object):
         '''
         calculate the intersection of 2 bbox using the cartesian coord
         '''
-        sec_x = Bounding_Box.overlap_interval(box1.x_var, box2.x_var)
-        sec_y = Bounding_Box.overlap_interval(box1.y_var, box2.y_var)
+        sec_x = Det_Bounding_Box.overlap_interval(box1.x_var, box2.x_var)
+        sec_y = Det_Bounding_Box.overlap_interval(box1.y_var, box2.y_var)
         return sec_x * sec_y
 
     @staticmethod
@@ -427,8 +466,11 @@ class Bounding_Box(object):
         '''
         return len(set.intersection(box1.elem, box2.elem))
 
-class Bbox_Metric_Record(Metric_Record):
 
+class Bbox_Metric_Record(Classif_Metric_Record):
+    '''
+    detection regarded as multiple classification + bbox localization
+    '''
     def __init__(self, class_num, class_name=None, elem='pixel', match_score='IoU', match_threshold='0.5-0.95/0.05',
                  confidence_type='prob', filter_mode=None, config={}):
         super(Bbox_Metric_Record, self).__init__(class_num, class_name=class_name)
@@ -438,10 +480,10 @@ class Bbox_Metric_Record(Metric_Record):
         # configure elem type
         assert elem in ['pixel', 'point', 'realxy']
         if elem == 'point':
-            self.bi_intersection = lambda b1, b2: Bounding_Box.elem_intersection(b1, b2)
+            self.bi_intersection = lambda b1, b2: Det_Bounding_Box.elem_intersection(b1, b2)
             self.get_size = lambda b: max(b.elem_size, 1)  # in case of empty set (divided by 0)
         else:
-            self.bi_intersection = lambda b1, b2: Bounding_Box.xy_intersection(b1, b2)
+            self.bi_intersection = lambda b1, b2: Det_Bounding_Box.xy_intersection(b1, b2)
             self.get_size = lambda b: b.size
         self.elem = elem
 
@@ -502,7 +544,7 @@ class Bbox_Metric_Record(Metric_Record):
 
     def _cal_matchscore_matrix(self, pred_bboxlist, label_bboxlist):
         '''
-        both detect_bbox & label bbox assumed to be a list of Bounding_Box obj
+        both detect_bbox & label bbox assumed to be a list of Det_Bounding_Box obj
         matrix are constructed as [pred][label]
         '''
         matrix = np.zeros(shape=(len(pred_bboxlist), len(label_bboxlist)))
@@ -515,7 +557,7 @@ class Bbox_Metric_Record(Metric_Record):
         # no intersection & at least farther & angle overlaped 
         return self.bi_intersection(fixed_bbox, bbox) < 1e-5 and \
                fixed_bbox.dist_var[0] < bbox.dist_var[0] and \
-               Bounding_Box.overlap_interval(fixed_bbox.angle_var, bbox.angle_var) / (bbox.angle_var[1] - bbox.angle_var[0]) > self.filter_mode['blockage']['overlap_threshold']
+               Det_Bounding_Box.overlap_interval(fixed_bbox.angle_var, bbox.angle_var) / (bbox.angle_var[1] - bbox.angle_var[0]) > self.filter_mode['blockage']['overlap_threshold']
 
     def __blockage_filtering(self, pred_bboxlist, label_bboxlist):
         # use polar coord for convenience
@@ -653,20 +695,20 @@ class Bbox_Metric_Record(Metric_Record):
     def eval_statistics(self, pred_bboxlist, label_bboxlist):
         '''
         evaluate model for the given example (prediction-label pair)
-        both pred_bboxlist & label_bboxlist assumed to be a list of definition for class Bounding_Box 
+        both pred_bboxlist & label_bboxlist assumed to be a list of definition for class Det_Bounding_Box 
         '''
         rst_record = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: 0)))
-        self._accumulate_rst(pred_bboxlist, label_bboxlist, rst_record=rst_record)
+        self.accumulate_rst(pred_bboxlist, label_bboxlist, rst_record=rst_record)
         self._cal_stat_from_rstrecord(rst_record=rst_record)
 
         return rst_record
 
-    def _accumulate_rst(self, pred_bboxlist, label_bboxlist, rst_record):
+    def accumulate_rst(self, pred_bboxlist, label_bboxlist, rst_record):
         '''
         accumulate the result over the whole dataset
         '''
-        pred_list = [Bounding_Box(bbox) for bbox in pred_bboxlist]
-        label_list = [Bounding_Box(bbox) for bbox in label_bboxlist]
+        pred_list = [Det_Bounding_Box(bbox) for bbox in pred_bboxlist]
+        label_list = [Det_Bounding_Box(bbox) for bbox in label_bboxlist]
         self._filtering_bbox(pred_list, label_list)
 
         for n_idx in self.class_name:  # idx of name
@@ -687,7 +729,7 @@ class Bbox_Metric_Record(Metric_Record):
         '''
         for batch_input, label_bboxlist in input_label_itr():
             pred_bboxlist = model_func(batch_input, label_bboxlist) # pred_bboxlist should be a valid definition
-            self._accumulate_rst(pred_bboxlist=pred_bboxlist, label_bboxlist=label_bboxlist, rst_record=self.rst_record)
+            self.accumulate_rst(pred_bboxlist=pred_bboxlist, label_bboxlist=label_bboxlist, rst_record=self.rst_record)
         self._cal_stat_from_rstrecord(self.rst_record)
 
     def clear_cur_epoch(self):
@@ -735,3 +777,50 @@ class Bbox_Metric_Record(Metric_Record):
             __print_dict(rst_record['mean_stat'])
 
         print('total examples\t%d' % self.example_cnt)
+
+
+class Tracking_SOT_Record(Metric_Record):
+    def __init__(self):
+        super(Tracking_SOT_Record, self).__init__()
+        self.rst_record = {'frame_cnt': 0, 'lost_target': 0, 'iou_sum': 0}
+        self.track_record = {}
+
+    def accumulate_rst(self, label, pred, track_key=None, rst_record=None):
+        '''
+        accumulate the result over the whole dataset, one track a time
+        '''
+        if rst_record is None:
+            rst_record = self.rst_record
+
+        lost_target = 0
+        iou_sum = 0
+        for label_box, pred_box in zip(label, pred):
+            label_box = Bounding_Box(label_box, def_type='xywh')
+            pred_box = Bounding_Box(pred_box, def_type='xywh')
+            iou = pred_box.IoU(label_box)
+            iou_sum += iou
+            if iou == 0:
+                lost_target += 1
+        rst_record['frame_cnt'] += len(label)
+        rst_record['iou_sum'] += iou_sum
+        rst_record['lost_target'] += lost_target
+
+        if track_key:
+            self.track_record[track_key] = {'frame_cnt': len(label), 'lost_target': lost_target, 'iou_sum': iou_sum}
+
+    def _cal_stat(self, record):
+        record['robustness'] = np.exp(-30.0 * record['lost_target'] / record['frame_cnt'])
+        record['mean_iou'] = record['iou_sum'] / record['frame_cnt']
+
+    def get_result(self, rst_record=None):
+        '''
+        calculate and return the result of evaluation
+        '''
+        if rst_record is None:
+            rst_record = self.rst_record
+        self._cal_stat(rst_record)
+
+        if self.track_record:
+            for r in self.track_record.values():
+                self._cal_stat(r)
+        return rst_record

@@ -469,6 +469,20 @@ class Feeder(object):
                 label_batch.append(cur_label)
             yield input_batch, label_batch
 
+    def iterate_forever(self, batch_size=None):
+        if batch_size:
+            while True:
+                yield from self.iterate_batch()
+        else:
+            data_gen = self.iterate_data()
+            while True:
+                try:
+                    yield next(data_gen)
+                except StopIteration:
+                    np.random.shuffle(self.data_ref)
+                    data_gen = self.iterate_data()
+                    pass
+
     def iterate_with_metadata(self, ref):
         '''
         iterate over data with corresponding meta data

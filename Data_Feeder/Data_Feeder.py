@@ -989,8 +989,7 @@ class Imagenet_VID_Feeder(Feeder):
     def __init__(self, data_ref_path, class_num, class_name=None, use_onehot=True, mode='VOT', num_unrolls=2, config={},
                  img_lib='cv2'):
         super(Imagenet_VID_Feeder, self).__init__(data_ref_path, class_num, class_name, use_onehot, config)
-        self.data_ref = self._load_data_ref()  # load the actual reference to data
-        self.num_unrolls = num_unrolls
+        self.reset_num_unrolls(num_unrolls)  # construct self.data_refs & record self.num_unrolls=num_unrolls
 
         assert img_lib in ['cv2', 'skimg']
         self.img_lib = __import__(img_lib, fromlist=[''])
@@ -1057,6 +1056,10 @@ class Imagenet_VID_Feeder(Feeder):
         
         np.random.shuffle(data_ref)
         return data_ref
+    
+    def reset_num_unrolls(self, num_unrolls):
+        self.data_ref = self._load_data_ref()
+        self.num_unrolls = num_unrolls
 
     def _get_img(self, img_ref):
         # ILSVRC2015/Data       /VID/[train, val, test]/[package]/[snippet ID]/[frame ID].JPEG

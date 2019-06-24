@@ -78,7 +78,7 @@ def alexnet_conv_layers(input, auxilary_input=None, prelu_initializer=tf.constan
 
     return feat_concat
 
-def re3_lstm_tracker(input, num_unrolls, lstm_size=512, prev_state=None, rnn_type='lstm', log=True):
+def re3_lstm_tracker(input, num_unrolls, lstm_size=512, prev_state=None, rnn_type='lstm'):
     '''
     input: object features in time sequence, expected to be [batch, time, feat_t + feat_t-1], with time = num_unrolls
     TODO: migrate to TF 2.0: 
@@ -99,10 +99,6 @@ def re3_lstm_tracker(input, num_unrolls, lstm_size=512, prev_state=None, rnn_typ
 
         # unroll
         lstm1_outputs, state1 = tf.nn.dynamic_rnn(lstm1, input, initial_state=state1, swap_memory=swap_memory)
-        if log:
-            lstmVars = [var for var in tf.trainable_variables() if 'lstm1' in var.name]
-            for var in lstmVars:
-                variable_summaries(var, var.name[:-2])
 
     with tf.variable_scope('lstm2'):
         lstm2 = tf.contrib.rnn.LSTMCell(lstm_size)
@@ -117,15 +113,11 @@ def re3_lstm_tracker(input, num_unrolls, lstm_size=512, prev_state=None, rnn_typ
         lstm2_inputs = tf.concat([input, lstm1_outputs], 2)
         lstm2_outputs, state2 = tf.nn.dynamic_rnn(lstm2, lstm2_inputs, initial_state=state2, swap_memory=swap_memory)
 
-        if log:
-            lstm_vars = [var for var in tf.trainable_variables() if 'lstm2' in var.name]
-            for var in lstm_vars:
-                variable_summaries(var, var.name[:-2])
-
         flatten_out = tf.reshape(lstm2_outputs, [-1, lstm2_outputs.get_shape().as_list()[-1]])  # flatten as [batch x time, feat]
 
     # final dense layer.
     with tf.variable_scope('fc_output'):
         fc_output = dense_layer(flatten_out, 4, activation=None)  # [batch x time, 4]
         fc_output = tf.reshape(fc_output, [-1, num_unrolls, 4])  #  [batch, time, 4]
+
     return fc_output, (state1, state2)
