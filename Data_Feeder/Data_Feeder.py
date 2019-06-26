@@ -1001,34 +1001,32 @@ class Imagenet_VID_Feeder(Feeder):
         self.mode = mode  # MOT possibly contains multiple tracks in a frame
         assert self.mode in ['VOT', 'MOT']
 
-        self._solve_label = self._solve_label_center  # default to center encoding (xywh)
-        self.decode_label = self._decode_label_center
-        if 'label_type' in config:
-            label_type = config['label_type']
-            assert label_type in ['corner', 'center']
-            if label_type == 'corner':
-                self._solve_label = self._solve_label_corner
-                self.decode_label = self._decode_label_corner
+        assert config['label_type'] in ['corner', 'center']
+        if config['label_type'] == 'corner':
+            self._solve_label = self._solve_label_corner
+            self.decode_label = self._decode_label_corner
+        else:  # center encoding (xywh)
+            self._solve_label = self._solve_label_center
+            self.decode_label = self._decode_label_center
 
-        self._norm_label = lambda bbox, img_shape: bbox  # default to raw
-        self._denorm_label = lambda bbox, img_shape: bbox
-        if 'label_ratio' in config:
-            assert config['label_ratio'] in ['fix', 'dynamic', 'raw']
-            if config['label_ratio'] == 'fix':
-                self._norm_label = lambda bbox, img_shape: bbox / 2270
-                self._denorm_label = lambda bbox, img_shape: bbox * 2270
-            elif config['label_ratio'] == 'dynamic':
-                self._norm_label = lambda bbox, img_shape: bbox / img_shape[[1, 0, 1, 0]]
-                self._denorm_label = lambda bbox, img_shape: bbox * img_shape[[1, 0, 1, 0]]
+        assert config['label_norm'] in ['fix', 'dynamic', 'raw']
+        if config['label_norm'] == 'fix':
+            self._norm_label = lambda bbox, img_shape: bbox / 2270
+            self._denorm_label = lambda bbox, img_shape: bbox * 2270
+        elif config['label_norm'] == 'dynamic':
+            self._norm_label = lambda bbox, img_shape: bbox / img_shape[[1, 0, 1, 0]]
+            self._denorm_label = lambda bbox, img_shape: bbox * img_shape[[1, 0, 1, 0]]
+        else:  # raw
+            self._norm_label = lambda bbox, img_shape: bbox
+            self._denorm_label = lambda bbox, img_shape: bbox
 
-        self._encode_bbox = self._encode_bbox_mask  # default to mask encoding
-        if 'bbox_encoding' in config:
-            assert config['bbox_encoding'] in ['mask', 'crop', 'mesh_mask']
-            if config['bbox_encoding'] == 'crop':
-                self._encode_bbox = self._encode_bbox_crop
-            elif config['bbox_encoding'] == 'mesh_mask':
-                self._encode_bbox = self._encode_bbox_mesh_mask
-
+        assert config['bbox_encoding'] in ['mask', 'crop', 'mesh_mask']
+        if config['bbox_encoding'] == 'crop':
+            self._encode_bbox = self._encode_bbox_crop
+        elif config['bbox_encoding'] == 'mesh_mask':
+            self._encode_bbox = self._encode_bbox_mesh_mask
+        else:  # mask encodeing
+            self._encode_bbox = self._encode_bbox_mask
 
         self.data_split = 'train' if 'data_split' not in config else config['data_split']  # default to train set
         assert self.data_split in ['train', 'val', 'test']
