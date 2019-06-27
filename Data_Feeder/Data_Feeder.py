@@ -986,12 +986,11 @@ class Imagenet_VID_Feeder(Feeder):
     original reference format: [[package_id, video_id, frame_id, track_id, class_id, occludded, xmin, ymin, xmax, ymax]...]
     note: xy-min/max are in window coord => x indexing col & y indexing row 
     '''
-    def __init__(self, data_ref_path, class_num, class_name=None, use_onehot=True, mode='VOT', num_unrolls=2, config={},
-                 img_lib='cv2'):
+    def __init__(self, data_ref_path, class_num, class_name=None, use_onehot=True, mode='VOT', num_unrolls=2,
+                 img_lib='cv2', config={}):
         super(Imagenet_VID_Feeder, self).__init__(data_ref_path, class_num, class_name, use_onehot, config)
-        self.reset_num_unrolls(num_unrolls)  # construct self.data_refs & record self.num_unrolls=num_unrolls
 
-        assert img_lib in ['cv2', 'skimg']
+        assert img_lib in ['cv2', 'skimage']
         self.img_lib = __import__(img_lib, fromlist=[''])
         if img_lib == 'cv2':
             self.imread = lambda path: self.img_lib.imread(path)[:,:,::-1]  # read as RGB
@@ -1003,36 +1002,37 @@ class Imagenet_VID_Feeder(Feeder):
 
         assert config['label_type'] in ['corner', 'center']
         if config['label_type'] == 'corner':
-            self._solve_label = self._solve_label_corner
-            self.decode_label = self._decode_label_corner
+            self._convert_label_type = np.array
+            self.revert_label_type: np.array
         else:  # center encoding (xywh)
-            self._solve_label = self._solve_label_center
-            self.decode_label = self._decode_label_center
-
-        assert config['label_norm'] in ['fix', 'dynamic', 'raw']
-        if config['label_norm'] == 'fix':
-            self._norm_label = lambda bbox, img_shape: bbox / 2270
-            self._denorm_label = lambda bbox, img_shape: bbox * 2270
-        elif config['label_norm'] == 'dynamic':
-            self._norm_label = lambda bbox, img_shape: bbox / img_shape[[1, 0, 1, 0]]
-            self._denorm_label = lambda bbox, img_shape: bbox * img_shape[[1, 0, 1, 0]]
-        else:  # raw
-            self._norm_label = lambda bbox, img_shape: bbox
-            self._denorm_label = lambda bbox, img_shape: bbox
-
-        assert config['bbox_encoding'] in ['mask', 'crop', 'mesh_mask']
+            self._convert_label_type = self._xyxy_to_xywh
+            self.revert_label_type = self._xywh_to_xyxy
+            
+        assert config['bbox_encoding'] in ['mask', 'crop', 'mesh']
         if config['bbox_encoding'] == 'crop':
-            self._encode_bbox = self._encode_bbox_crop
-        elif config['bbox_encoding'] == 'mesh_mask':
+            self._encode_bbox = self._encode_bbox_crop  # encode bbox to both input img & label
+            self.decode_bbox = self._decode_bbox_crop # decode pred to bbox on full image
+        elif config['bbox_encoding'] == 'mesh':
             self._encode_bbox = self._encode_bbox_mesh_mask
+            self.decode_bbox = self._decode_bbox_mask
         else:  # mask encodeing
             self._encode_bbox = self._encode_bbox_mask
+            self.decode_bbox = self._decode_bbox_mask
 
-        self.data_split = 'train' if 'data_split' not in config else config['data_split']  # default to train set
-        assert self.data_split in ['train', 'val', 'test']
+        assert config['use_inference_prob'] <= 1  # set to negative to disable
+
+        assert config['data_split'] in ['train', 'val', 'test']
+        self.data_split = config['data_split']
+        if self.data_split == 'train':
+            self._get_img = self._get_train_img
+        else:
+            self._get_img = self._get_valtest_img
 
         self.data_dir = '/'.join(self.data_ref_path.strip('/').split('/')[:-1]) \
                         if 'data_dir' not in config else config['data_dir']  # keys default to be directly under data dir
+
+        # finally, construct self.data_refs & record self.num_unrolls=num_unrolls
+        self.reset_num_unrolls(num_unrolls)
 
     def _load_data_ref(self):
         # TODO:should use pandas
@@ -1049,7 +1049,8 @@ class Imagenet_VID_Feeder(Feeder):
                 start = list(refs[idx][[0, 1, 3]])
                 end = list(refs[idx + self.num_unrolls - 1][[0, 1, 3]])
                 if start == end:  # still in the same track
-                    data_ref = refs[idx:idx + self.num_unrolls]
+                    # data_ref.append(refs[idx:idx + self.num_unrolls])
+                    data_ref.append(idx)
         else: # 'MOT'
             # sort first by package, then video snippet, then frame
             idx = np.lexsort((refs[:, 2], refs[:, 1], refs[:, 0]))
@@ -1057,124 +1058,156 @@ class Imagenet_VID_Feeder(Feeder):
             raise NotImplementedError
         
         np.random.shuffle(data_ref)
-        return data_ref
+        return refs, data_ref
     
     def reset_num_unrolls(self, num_unrolls):
-        self.data_ref = self._load_data_ref()
         self.num_unrolls = num_unrolls
+        self._original_refs, self.data_ref = self._load_data_ref()
 
-    def _get_img(self, img_ref):
+    def _get_train_img(self, img_ref):
         # ILSVRC2015/Data       /VID/[train, val, test]/[package]/[snippet ID]/[frame ID].JPEG
-        package_name = 'ILSVRC2015_VID_%s_%04d' % (self.data_split, img_ref[0])
-        img_path = '%s/Data/VID/%s/%s/%08d/%06d.JPEG' % (self.data_dir, self.data_split, package_name, img_ref[1], img_ref[2])
+        package_name = 'ILSVRC2015_VID_train_%04d' % img_ref[0]
+        img_path = '%s/Data/VID/train/%s/ILSVRC2015_train_%08d/%06d.JPEG' % (self.data_dir, package_name, img_ref[1], img_ref[2])
         img = self.imread(img_path)
         return img
 
-    def _encode_bbox_mask(self, img, bbox):
-        img_shape = np.array(img.shape)
+    def _get_valtest_img(self, img_ref):
+        # ILSVRC2015/Data/VID/[val, test]/[snippet ID]/[frame ID].JPEG
+        img_path = '%s/Data/VID/%s/ILSVRC2015_%s_%08d/%06d.JPEG' % \
+                    (self.data_dir, self.data_split, self.data_split, img_ref[1], img_ref[2])
+        img = self.imread(img_path)
+        return img
+
+    @staticmethod
+    def _get_mask(img_shape, bbox):
         [xmin, ymin, xmax, ymax] = np.clip(bbox, 0, img_shape[[1, 0, 1, 0]]).astype(int)  # the actual region to focus
         mask = np.zeros(shape=img_shape[[0, 1]])
         mask[ymin:ymax, xmin:xmax] = 1
-        return img, mask[...,np.newaxis]
-    
-    def _encode_bbox_mesh_mask(self, img, bbox):
-        # provide network with pixel location [i,j] at each location
-        X, Y = np.meshgrid(img.shape[0], img.shape[1])
-        img, mask = self._encode_bbox_mask(img, bbox)
-        mask = np.concatenate([mask, X[..., np.newaxis], Y[..., np.newaxis]], axis=-1)
-        return img, mask
+        return mask[...,np.newaxis]
 
-    def _encode_bbox_crop(self, img, bbox):
-        x, y = int((bbox[0] + bbox[2]) / 2), int((bbox[1] + bbox[3]) / 2)  # prevent jitter
-        w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
-        extended_bbox = [x - w, y - h, x + w, y + h]
-        cropped_img = np.zeros(shape=(2 * h, 2 * w, img.shape[-1]))
+    def _encode_bbox_mask(self, img, prev_box, cur_box):
+        img_shape = np.array(img.shape)
+        mask = self._get_mask(img_shape, prev_box)
+        return (img, mask), self._convert_label_type(cur_box)
+    
+    def _encode_bbox_mesh_mask(self, img, prev_box, cur_box):
+        # additionally provide network with pixel location [i,j] at each location
+        img_shape = np.array(img.shape)
+        mask = self._get_mask(img_shape, prev_box)
+        Y, X = np.meshgrid(img_shape[0], img_shape[1])
+        mask = np.concatenate([mask, Y[..., np.newaxis], X[..., np.newaxis]], axis=-1)
+        return (img, mask), self._convert_label_type(cur_box)
+
+    def _encode_bbox_crop(self, img, prev_box, cur_box, crop_size=227):
+        x, y, w, h = self._xyxy_to_xywh(prev_box)  # prev_box from original imagenet label
+        extended_bbox = np.array([x - w, y - h, x + w, y + h])  # xyxy
 
         img_shape = np.array(img.shape)
+        crop_shape = (2 * h, 2 * w, img_shape[-1])
+        cropped_img = np.zeros(shape=crop_shape)
+
         clipped_bbox = np.clip(extended_bbox, 0, img_shape[[1, 0, 1, 0]]).astype(int)  # the actual region to crop
-        x_offset = clipped_bbox[0] - extended_bbox[0]
+        x_offset = clipped_bbox[0] - extended_bbox[0]  # offset of actual-expectation crop region/box
         y_offset = clipped_bbox[1] - extended_bbox[1]
 
         # crop on original img
         [xmin, ymin, xmax, ymax] = clipped_bbox
-        cropped_img[y_offset:y_offset + 2*h, x_offset:x_offset + 2*w] = img[ymin:ymax, xmin:xmax]
+        cropped_img[y_offset:y_offset + crop_shape[0], x_offset:x_offset + crop_shape[1]] = img[ymin:ymax, xmin:xmax]
 
-        return self.img_lib.resize(cropped_img, (227, 227))
+        label_box = cur_box - extended_bbox[[0, 1, 0, 1]]  # originated as [x,y,x,y] - [xmin,ymin,xmin,ymin]
+        label_box[[0, 2]] = label_box[[0, 2]] / crop_shape[1] * crop_size  # normalized as x / w ratio, then rescale
+        label_box[[1, 3]] = label_box[[1, 3]] / crop_shape[0] * crop_size  # normalized as y / h ratio, then rescale
+        return self.img_lib.resize(cropped_img, (crop_size, crop_size)), self._convert_label_type(label_box)
+
+    def _decode_bbox_crop(self, prev_box, cur_box, crop_size=227):
+        x, y, w, h = self._xyxy_to_xywh(prev_box)  # prev_box assumed to be as original imagenet label format
+        extended_bbox = np.array([x - w, y - h, x + w, y + h])  # xyxy
+        crop_shape = (2 * h, 2 * w)
+        
+        box = self.revert_label_type(cur_box) # as xyxy
+        box[[0, 2]] = box[[0, 2]] / crop_size * crop_shape[1]  # recover ratio and rescale according to original img shape
+        box[[1, 3]] = box[[1, 3]] / crop_size * crop_shape[0]
+        box = box + extended_bbox[[0, 1, 0, 1]]  # originated back to img coord
+        return box.astype(int)
+
+    def _decode_bbox_mask(self, img, prev_box, cur_box):
+        box = self.revert_label_type(cur_box)
+        return np.clip(box, 0, np.array(img.shape)[[1, 0, 1, 0]]).astype(int)
 
     @staticmethod
     def _clip_bbox_from_ref(ref, image_shape):
-        xmin, ymin, xmax, ymax = np.clip(ref[-4], 0, image_shape[[1, 0, 1, 0]])
+        xmin, ymin, xmax, ymax = np.clip(ref[-4:], 0, image_shape[[1, 0, 1, 0]])
         return xmin, ymin, xmax, ymax
 
-    def _xyxy_to_xywh(self, xyxy):
+    @staticmethod
+    def _xyxy_to_xywh(xyxy):
         xc, yc = int((xyxy[0] + xyxy[2]) / 2), int((xyxy[1] + xyxy[3]) / 2)  # xmin, ymin, xmax, ymax
         h = xyxy[3] - xyxy[1]
         w = xyxy[2] - xyxy[0]
-        return xc, yc, w, h
+        return np.array(xc, yc, w, h)
 
-    def _solve_label_center(self, ref, image_shape):
+    @staticmethod
+    def _xywh_to_xyxy(xywh):
+        w_2 = int(xywh[2] / 2)
+        h_2 = int(xywh[3] / 2)
+        return np.array([xywh[0] - w_2, xywh[1] - h_2, xywh[0] + w_2, xywh[1] + h_2])
+        
+    def _solve_labelbox_center(self, ref, image_shape):
         xyxy_box = self._clip_bbox_from_ref(ref, image_shape)
         xywh_box = self._xyxy_to_xywh(xyxy_box)
-        bbox = self._norm_label(np.array(xywh_box), image_shape)
-        return bbox, xyxy_box
+        return xywh_box, xyxy_box
 
-    def _solve_label_corner(self, ref, image_shape):
+    def _solve_labelbox_corner(self, ref, image_shape):
         xyxy_box = self._clip_bbox_from_ref(ref, image_shape)
-        bbox = self._norm_label(np.array([xyxy_box]), image_shape)
-        return bbox, xyxy_box
-
-    def _decode_label_center(self, input, label):
-        bbox_list = []
-        for img, l in zip(input, label):
-            bbox = self._denorm_label(np.array(l), np.array(img.shape)).astype(int)
-            bbox_list.append(bbox)
-        return bbox_list
-    
-    def _decode_label_corner(self, input, label):
-        bbox_list = []
-        for img, l in zip(input, label):
-            xyxy_box = self._denorm_label(np.array(l), np.array(img.shape)) # xyxy
-            bbox_list.append(self._xyxy_to_xywh(xyxy_box))
-        return bbox_list
+        return xyxy_box, xyxy_box
 
     def _get_input_label_pair(self, ref):
+        # TODO: generate pair of images at time [t, t-1], for feeding 'crop'
+        ref = self._original_refs[ref:ref + self.num_unrolls]  # get original_ref for a track
+
+        if np.random.rand() < self.config['use_inference_prob']:
+            return self._get_input_label_from_inference(ref)
+
         input_seq = []
         label_seq = []
-        prev_bbox = None
-        for r in ref:  # for original_ref in constructed track/video ref
+        prev_box = None
+        for r in ref:  # for original_ref in a track/video
             cur_img = self._get_img(r)
-            cur_label, cur_bbox = self._solve_label(r, np.array(cur_img.shape))
+            cur_box = self._clip_bbox_from_ref(r, np.array(cur_img.shape))  # xyxy box
 
-            if prev_bbox is None:
-                prev_bbox = cur_bbox
-
-            cur_input = self._encode_bbox(cur_img, prev_bbox)
+            if prev_box is None:
+                prev_box = cur_box
+            cur_input, cur_label = self._encode_bbox(cur_img, prev_box, cur_box)
+            prev_box = cur_box
+            
             input_seq.append(cur_input)
             label_seq.append(cur_label)
         return input_seq, label_seq
 
-    def _get_input_label_bbox(self, ref):
-        input_seq = []
-        label_seq = []
-        bbox_seq = []
-        prev_bbox = None
+    def encode_bbox_to_img(self, img, prev_bbox):
+        img, _ = self._encode_bbox(img, prev_bbox, [0,0,0,0])
+        return img
+
+    def _get_input_label_from_inference(self, ref):
+        img_seq = []
+        box_seq = []
         for r in ref:  # for original_ref in constructed track/video ref
             cur_img = self._get_img(r)
-            cur_label, cur_bbox = self._solve_label(r, np.array(cur_img.shape))
-            bbox_seq.append(cur_bbox)
+            cur_box = self._clip_bbox_from_ref(r, np.array(cur_img.shape))  # xyxy box
+            img_seq.append(cur_img)
+            box_seq.append(cur_box)
 
-            if prev_bbox is None:
-                prev_bbox = cur_bbox
+        pred_seq = self.config['model'].inference(img_seq, box_seq, self.config['sess'], self.encode_bbox_to_img, self.decode_bbox)
 
-            cur_input = self._encode_bbox(cur_img, prev_bbox)
+        input_seq = []
+        label_seq = []
+        prev_box = None
+        for cnt in range(len(ref)):
+            img = img_seq[cnt]
+            label_box = box_seq[cnt]
+            prev_box = box_seq[0] if cnt == 0 else pred_seq[cnt - 1]
+            cur_input, cur_label = self._encode_bbox(img, prev_box, label_box)
+
             input_seq.append(cur_input)
             label_seq.append(cur_label)
-            
-        return input_seq, label_seq, bbox_seq
-
-    def iterate_with_metadata(self):
-        '''
-        iterate through dataset, each time produce a track of: img, label, original bbox (xyxy)
-        '''
-        for ref in self.data_ref:
-            yield self._get_input_label_bbox(ref)
+        return input_seq, label_seq

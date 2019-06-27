@@ -81,6 +81,12 @@ os.makedirs(args.summary_dir, exist_ok=True)
 ''' construct feeder '''
 
 
+feeder_cfg = {
+    'label_type': args.label_type,
+    'bbox_encoding':'crop',
+    'use_inference_prob':-1,
+    'data_split': 'train',
+}
 data_ref_dir = os.path.join(root_dir, 'Data/ILSVRC2015')
 train_ref = os.path.join(data_ref_dir, 'train_label.npy')
 train_feeder = feeder.Imagenet_VID_Feeder(train_ref, class_num=30, num_unrolls=args.num_unrolls)
@@ -94,9 +100,32 @@ if args.tf_dataset:
     # tf_dataset_iterator = feeder_gen
 
 else:
-    tf_img = tf.placeholder(tf.uint8, shape=[None, None, None, None, args.channel_size])
+    tf_input = tf.placeholder(tf.uint8, shape=[None, None, None, None, args.channel_size])
     tf_label = tf.placeholder(tf.float32, shape=[args.batch_size, None, 4])
     tf_unroll = tf.placeholder(tf.int32)
+
+def display_img_pred_label(track_img, label_box, track_pred):
+    fig, ax = plt.subplots(1, figsize=(10,10))
+    for img, label, pred in zip(track_img, label_box, track_pred):  # assume xyxy box
+        pred_rect = mlt.patches.Rectangle((pred[[0, 1]]), pred[2] - pred[0], pred[3] - pred[1], color='g', fill=False)
+        label_rect = mlt.patches.Rectangle((label[[0, 1]]), label[2] - label[0], label[3] - label[1], color='r', fill=False)
+
+        ax.imshow(img)
+        ax.add_patches(label_rect)
+        ax.add_patches(pred_rect)
+        fig.canvas.draw()
+        plt.show()
+        plt.waitforbuttonpress()
+        pred_rect.remove()
+        label_rect.remove
+        ax.clear()
+
+
+''' metric recoder '''
+
+
+train_recorder = analyzer.Tracking_SOT_Record()
+val_recorder = analyzer.Tracking_SOT_Record()
 
 
 ''' construct model '''
@@ -106,14 +135,13 @@ sess = constructer.tfops.Session()
 saver = tf.train.Saver()
 longSaver = tf.train.Saver()
 
-tracker = constructer.Re3_Tracker(tf_img, tf_label, num_unrolls=tf_unroll,
+tracker = constructer.Re3_Tracker(tf_input, tf_label, num_unrolls=tf_unroll,
                                   img_size=args.img_size,
                                   lstm_size=args.lstm_size,
                                   unroll_type=args.unroll_type,
                                   bbox_encoding=args.bbox_encoding)
 learning_rate = tf.placeholder(tf.float32) if args.lrn_rate is None else args.lrn_rate
 train_step = tracker.get_train_step(learning_rate)
-train_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES)
 summary_op = tracker.summary['all']
 
 # logging validation
@@ -150,7 +178,7 @@ summary_writer = tf.summary.FileWriter(os.path.join(args.summary_dir, args.model
 # routine to update model
 def run_train_step_feeddict(input_batch, label_batch, display=False):
     feed_dict = {
-        tracker.tf_img: input_batch,
+        tracker.tf_input: input_batch,
         tracker.tf_label: label_batch,
         tracker.num_unrolls: num_unrolls,
     }
@@ -175,19 +203,10 @@ def run_train_step_feeddict(input_batch, label_batch, display=False):
     if display:
         track_pred = op_to_run[-1][0]
         track_img = input_batch[0]
-        track_label = label_batch[0]
-        for img, label, pred in zip(track_img, track_label, track_pred):
-            # get xywh box
-            pred_box = tracker.decode_bbox_func(pred)
-            label_box = tracker.decode_bbox_func(label)
-            
-            pred_rect = mlt.patches.Rectangle(pred_box[:2], pred_box[2], pred_box[3], color='g', fill=False)
-            label_rect = mlt.patches.Rectangle(label_box[:2], label_box[2], label_box[3], color='r', fill=False)
-            fig, ax = plt.subplots(1, figsize=(10,10))
-            ax.imshow(img)
-            ax.add_patches(pred_rect)
-            ax.add_patches(label_rect)
-            plt.show()
+        label_box = [train_feeder.revert_label_type(l) for l in label_batch[0]]
+        pred_box = [train_feeder.revert_label_type(p) for p in track_pred]
+
+        display_img_pred_label(track_img, label_box, pred_box)
         op_to_run = op_to_run[:-1] # get rid of pred
 
     # write summary

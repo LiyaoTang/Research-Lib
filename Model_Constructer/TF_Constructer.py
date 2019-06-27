@@ -404,24 +404,24 @@ class Re3_Tracker(object):
         self.lstm_size = lstm_size
         
         self.config = config  # data & encoding associated configuration
-        imgnet_mean = [123.151630838, 115.902882574, 103.062623801]
-        assert config['bbox_encoding'] in ['mask', 'mesh', 'corner', 'center']  # mesh/mask: no crop; corner/center: crop
+        assert config['bbox_encoding'] in ['mask', 'mesh', 'crop']  # mesh/mask: no crop; crop: crop
         assert config['unroll_type'] in ['manual', 'dynamic']  # manual: one step a time; dynamic: unroll the whole sequence
         assert config['label_type'] in ['corner', 'center']  # corner: xyxy; center: xywh
         assert config['label_norm'] in ['fix', 'dynamic', 'raw']  # fix: /2270; dynamic: /img_shape; raw: no division
 
+        imgnet_mean = [123.151630838, 115.902882574, 103.062623801]
         with tf.variable_scope('preprocess'):
             if self.config['bbox_encoding'] in ['mask', 'mesh']:  # prepare mask: tf_img contain img & mask
                 self.net = self.tf_input[0] - imgnet_mean
                 self.img_size = tf.shape(self.net)[2:] # [img_h, img_w, img_channel]
                 use_spp = True
                 auxilary_input = tf_input[1]
-                if self.config['bbox_encoding'] == 'mesh':
-                    Y, X = tf.meshgrid(tf.range(self.img_size[0]), tf.range(self.img_size[1]), indexing='ij')
-                    auxilary_input = tf.concat([auxilary_input, Y, X], axis=-1)
+                # if self.config['bbox_encoding'] == 'mesh':
+                #     Y, X = tf.meshgrid(tf.range(self.img_size[0]), tf.range(self.img_size[1]), indexing='ij')
+                #     auxilary_input = tf.concat([auxilary_input, Y, X], axis=-1)
                 auxilary_input = tfops.conv_layer(auxilary_input, 96, 11, 4, padding='VALID', activation=None)
             else:  # cropping
-                self.net = tf_img - imgnet_mean
+                self.net = self.tf_input - imgnet_mean
                 self.img_size = [227, 227, 3]
                 auxilary_input = None
                 use_spp = False
@@ -494,6 +494,25 @@ class Re3_Tracker(object):
             self.train_step = optimizer.minimize(self.loss, global_step=global_step, var_list=tf.trainable_variables(),
                                                 colocate_gradients_with_ops=True)
         return self.train_step
+
+    def inference(self, track, bboxes, sess, encode_bbox_func, decode_bbox_func, display_func=None):
+        '''
+        given a single track, output inferenced track result
+        '''
+        prev_state = [np.zeros((1, self.lstm_size)) for _ in range(4)]
+        out_bbox = [bboxes[0]]  # the initial box
+        for img in track:
+            if display_func:
+                display_func(img, out_bbox[-1])
+            img = encode_bbox_func(img, out_bbox[-1])  # encode the prev bbox onto current input (cropping, masking, etc.)
+            feed_dict = {
+                self.tf_input: [img],
+                self.num_unrolls: 1,
+                self.prev_state: prev_state,
+            }
+            pred, prev_state = sess.run([self.pred, self.lstm_state], feed_dict=feed_dict)
+            out_bbox.append(decode_bbox_func(out_bbox[-1], pred))  # record bbox under whole img coord
+        return out_bbox
 
 
 class Val_Model(object):

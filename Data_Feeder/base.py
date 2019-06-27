@@ -405,7 +405,7 @@ class Feeder(object):
     '''
     def __init__(self, data_ref_path, class_num, class_name=None, use_onehot=True, config={}):
         self.data_ref_path = data_ref_path
-        self.data_ref = self._load_data_ref()
+        self.data_ref = None
 
         self.class_num = class_num
         if class_name is None:
