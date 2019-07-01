@@ -30,27 +30,29 @@ DEBUG = True
 
 
 parser = constructer.ArgumentParser(description='training re3')
-parser.add_argument('--class_num', type=int, dest='class_num')
 parser.add_argument('--num_unrolls', default=2, type=int, dest='num_unrolls')
-parser.add_argument('--img_size', default=None, type=int, dest='img_size')
 parser.add_argument('--lstm_size', default=512, type=int, dest='lstm_size')
+parser.add_argument('--lrn_rate', default=None, type=int, dest='lrn_rate')
 
+parser.add_argument('--label_norm', default='dynamic', type=str, dest='label_norm')
 parser.add_argument('--unroll_type', default='dynamic', type=str, dest='unroll_type')
 parser.add_argument('--bbox_encoding', default='mask', type=str, dest='bbox_encoding')
-parser.add_argument('--restore', default=True, type=bool, dest='restore')
 
-parser.add_argument('--lrn_rate', default=None, type=int, dest='lrn_rate')
-parser.add_argument('--buffer_size', default=5, type=int, dest='buffer_size')
 parser.add_argument('--max_step', default=1e6, type=int, dest='max_step')
-
-parser.add_argument('--run_val', default=True, type=bool, dest='run_val')
 parser.add_argument('--rand_seed', default=None, type=int, dest='rand_seed')
+
+parser.add_argument('--label_type', default='center', type=str, dest='label_type')
+parser.add_argument('--run_val', default=True, type=bool, dest='run_val')
 parser.add_argument('--worker_num', default=1, type=int, dest='worker_num')
-parser.add_argument('--tf_dataset', default=True, type=bool, dest='tf_dataset')
+parser.add_argument('--buffer_size', default=5, type=int, dest='buffer_size')
+parser.add_argument('--use_parallel', default=True, type=bool, dest='use_parallel')
+parser.add_argument('--use_tfdataset', default=True, type=bool, dest='use_tfdataset')
+parser.add_argument('--use_inference_prob', default=-1, type=float, dest='use_inference_prob')
 
 parser.add_argument('--log_dir', default='./Log', type=str, dest='log_dir')
 parser.add_argument('--model_dir', default='./Model', type=str, dest='model_dir')
 parser.add_argument('--summary_dir', default='./Summary', type=str, dest='summary_dir')
+parser.add_argument('--restore', default=True, type=bool, dest='restore')
 parser.add_argument('--restore_dir', default='', type=str, dest='restore_dir')
 
 args = parser.parse_args()
@@ -92,17 +94,20 @@ train_ref = os.path.join(data_ref_dir, 'train_label.npy')
 train_feeder = feeder.Imagenet_VID_Feeder(train_ref, class_num=30, num_unrolls=args.num_unrolls)
 
 if args.tf_dataset:
-    raise NotImplementedError
-    # para_train_feeder = feeder.Parallel_Feeder(train_feeder, batch_size=batch_size,
-    #                                            buffer_size=args.buffer_size, worker_num=args.worker_num)
-    # feeder_gen = para_train_feeder.iterate_batch()
-    # tf_dataset = tf.data.Dataset.from_generator(feeder_gen, (tf.uint8, tf.float32))
-    # tf_dataset_iterator = feeder_gen
-
+    if args.use_parallel:
+        feeder = feeder.Parallel_Feeder(train_feeder, batch_size=1, buffer_size=args.buffer_size, worker_num=args.worker_num)
+    else:
+        feeder = train_feeder
+    feeder_gen = para_train_feeder.iterate_batch(1)
+    tf_dataset = tf.data.Dataset.from_generator(feeder_gen, (tf.uint8, tf.float32))
+    tf_dataset = tf_dataset.prefetch(1)
+    tf_dataset_iter = tf_dataset.make_one_shot_iterator()
+    tf_input, tf_label = tf_dataset_iter.get_next()
 else:
     tf_input = tf.placeholder(tf.uint8, shape=[None, None, None, None, args.channel_size])
     tf_label = tf.placeholder(tf.float32, shape=[args.batch_size, None, 4])
-    tf_unroll = tf.placeholder(tf.int32)
+tf_unroll = tf.placeholder(tf.int32)
+prev_state = tf.placeholder()
 
 def display_img_pred_label(track_img, label_box, track_pred):
     fig, ax = plt.subplots(1, figsize=(10,10))
@@ -135,8 +140,8 @@ sess = constructer.tfops.Session()
 saver = tf.train.Saver()
 longSaver = tf.train.Saver()
 
-tracker = constructer.Re3_Tracker(tf_input, tf_label, num_unrolls=tf_unroll,
-                                  img_size=args.img_size,
+
+tracker = constructer.Re3_Tracker(tf_input, tf_label, num_unrolls=tf_unroll, prev_state=,
                                   lstm_size=args.lstm_size,
                                   unroll_type=args.unroll_type,
                                   bbox_encoding=args.bbox_encoding)

@@ -391,10 +391,11 @@ class Re3_Tracker(object):
     '''
     def __init__(self, tf_input, tf_label, num_unrolls, prev_state, lstm_size=512, config={}):
         '''
-        tf_input: [batch, time, img_h, img_w, img_channel] for bbox_encoding='mask', 
-                  [batch, time, 2, img_h, img_w, img_channel] for bbox_encoding in ['corner', 'center']
+        tf_input: [batch, time, img_h, img_w, img_channel] for bbox_encoding in ['mask', 'mesh'] => cur img + mask
+                    TODO: change feeder for mask into pre-concat, insstead of tuple (need division anyway)
+                  [batch, time, 2, img_h, img_w, img_channel] for bbox_encoding in ['corner', 'center'] => one cur crop, one prev
         tf_label: [batch, time, 4] (x,y,w,h)
-        num_unrolls: int to determine sequence len of current batch
+        num_unrolls: determine sequence len of current batch TODO: seems not to need this (able to be dynamicly inferred)
         '''
         self.tf_input = tf_input
         self.tf_label = tf_label
@@ -411,11 +412,11 @@ class Re3_Tracker(object):
 
         imgnet_mean = [123.151630838, 115.902882574, 103.062623801]
         with tf.variable_scope('preprocess'):
-            if self.config['bbox_encoding'] in ['mask', 'mesh']:  # prepare mask: tf_img contain img & mask
-                self.net = self.tf_input[0] - imgnet_mean
-                self.img_size = tf.shape(self.net)[2:] # [img_h, img_w, img_channel]
+            if self.config['bbox_encoding'] in ['mask', 'mesh']:  # prepare mask: tf_img contain img & mask                
+                self.net = self.tf_input[...,:-1] - imgnet_mean
+                self.img_size = tf.shape(self.net)[2:]  # [img_h, img_w, img_channel]
                 use_spp = True
-                auxilary_input = tf_input[1]
+                auxilary_input = tf_input[..., -1]  # mask
                 # if self.config['bbox_encoding'] == 'mesh':
                 #     Y, X = tf.meshgrid(tf.range(self.img_size[0]), tf.range(self.img_size[1]), indexing='ij')
                 #     auxilary_input = tf.concat([auxilary_input, Y, X], axis=-1)
@@ -425,6 +426,7 @@ class Re3_Tracker(object):
                 self.img_size = [227, 227, 3]
                 auxilary_input = None
                 use_spp = False
+            self.num_unrolls = tf.shape(self.net)[1]
             self.net = tf.reshape(self.net, (-1, self.img_size[0], self.img_size[1], self.img_size[2]))  # [-1, img_h, img_w, img_channel]
 
         with tf.variable_scope('re3'):

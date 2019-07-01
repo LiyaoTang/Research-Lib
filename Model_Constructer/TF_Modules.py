@@ -86,7 +86,6 @@ def re3_lstm_tracker(input, num_unrolls, lstm_size=512, prev_state=None, rnn_typ
         contrib.rnn.LSTMStateTuple -> get_initial_tuple
         dynamic_rnn -> keras.layers.RNN
     '''
-    swap_memory = num_unrolls > 1
     assert rnn_type in ['lstm']
     with tf.variable_scope('lstm1'):
         lstm1 = tf.contrib.rnn.LSTMCell(lstm_size)
@@ -98,7 +97,7 @@ def re3_lstm_tracker(input, num_unrolls, lstm_size=512, prev_state=None, rnn_typ
             state1 = lstm1.zero_state(dtype=tf.float32)
 
         # unroll
-        lstm1_outputs, state1 = tf.nn.dynamic_rnn(lstm1, input, initial_state=state1, swap_memory=swap_memory)
+        lstm1_outputs, state1 = tf.nn.dynamic_rnn(lstm1, input, initial_state=state1, swap_memory=True)
 
     with tf.variable_scope('lstm2'):
         lstm2 = tf.contrib.rnn.LSTMCell(lstm_size)
@@ -111,7 +110,7 @@ def re3_lstm_tracker(input, num_unrolls, lstm_size=512, prev_state=None, rnn_typ
 
         # unroll
         lstm2_inputs = tf.concat([input, lstm1_outputs], 2)
-        lstm2_outputs, state2 = tf.nn.dynamic_rnn(lstm2, lstm2_inputs, initial_state=state2, swap_memory=swap_memory)
+        lstm2_outputs, state2 = tf.nn.dynamic_rnn(lstm2, lstm2_inputs, initial_state=state2, swap_memory=True)
 
         flatten_out = tf.reshape(lstm2_outputs, [-1, lstm2_outputs.get_shape().as_list()[-1]])  # flatten as [batch x time, feat]
 

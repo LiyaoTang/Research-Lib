@@ -597,11 +597,12 @@ class Parallel_Feeder(object):
             if not config['alive']:
                 break
 
-    def iterate_batch(self, timeout=5):
+    def iterate_batch(self, batch_size, timeout=5):
         '''
         entry for main process: iterate through dataset for once; one batch a time
         '''
         self.__config['wrapable'] = False
+        self.__config['batch_size'] = batch_size
         self._create_worker() # workers start runnning
         cnt = 0
         while True:
@@ -616,10 +617,17 @@ class Parallel_Feeder(object):
             if cnt >= len(self.__data_ref):  # finished
                 break
 
-    def feed_forever(self, timeout=5):
+    def iterate_forever(self, timeout=5):
         '''
         entry for main process: create running-forever workers and a handle func to get data
         '''
         self.__config['wrapable'] = True
         self._create_worker()
-        return self.__buffer.get
+        while True:
+            try:
+                yield self.__buffer.get(timeout=timeout)  # potentially blocking
+            except self.mp.TimeoutError:
+                print('------------>')
+                print('timeout when trying to read batch')
+                print('<------------')
+                raise

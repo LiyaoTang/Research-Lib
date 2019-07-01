@@ -22,7 +22,7 @@ import matplotlib.pyplot as plt
 import Data_Feeder as feeder
 import Model_Analyzer as analyzer
 import Model_Constructer as constructer
-from constructer import tfops
+import Model_Constructer.TF_Ops as tfops
 
 class Re3_Trainer(object):
     def __init__(self, model_name, root_dir, config):
@@ -42,57 +42,102 @@ class Re3_Trainer(object):
             self.config['restore_dir'] = self.config['log_dir']
 
         # get feeder
+        self.get_feeder(config)
+
+        # get tracker
+    
+    def get_tracker(self, config):
+        assert config['label_norm'] in ['fix', 'dynamic', 'raw']
+        assert config['use_tfdataset'] in [True, False]
+        assert config['use_parallel'] in [True, False]
+        assert type(config['lstm_size']) is int
+        model_cfg = {
+            'label_type':config['label_type'],
+            'bbox_encoding':config['bbox_encoding'],
+            'label_norm': config['label_norm'],
+            'unroll_type': config['unroll_type'],
+            'lstm_size': config['lstm_size'],
+        }
+
+        self.tracker = constructer.Re3_Tracker()
+
+        tracker = constructer.Re3_Tracker(self.tf_input, self.tf_label, num_unrolls=self.tf_unroll,
+                                        lstm_size=args.lstm_size,
+                                        unroll_type=args.unroll_type,
+                                        bbox_encoding=args.bbox_encoding)
+        learning_rate = tf.placeholder(tf.float32) if args.lrn_rate is None else args.lrn_rate
+        train_step = tracker.get_train_step(learning_rate)
+        summary_op = tracker.summary['all']
+
+        # logging validation
+        val_scope = 'val'
+        with tf.variable_scope(val_scope):
+            robustness_ph = tf.placeholder(tf.float32, shape=[])
+            lost_targets_ph = tf.placeholder(tf.float32, shape=[])
+            mean_iou_ph = tf.placeholder(tf.float32, shape=[])
+            avg_ph = tf.placeholder(tf.float32, shape=[])
+            val_tracker = constructer.Re3_Tracker(tf_img, tf_label,
+                                                num_unrolls=args.num_unrolls,
+                                                img_size=args.img_size,
+                                                lstm_size=args.lstm_size,
+                                                unroll_type=args.unroll_type,
+                                                bbox_encoding=args.bbox_encoding)
+            val_vars = list(tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=val_scope))
+            restore_dict = dict([v.name.strip(val_scope + '/').split(':')[0] for v in val_vars], val_vars)
+            val_model = constructer.Val_Model(sess, val_tracker, feeder, val_recorder, var_dict=restore_dict)
+
+
+    def get_feeder(self, config):
         assert 'num_unrolls' in config
         assert config['label_type'] in ['corner', 'center']
         assert config['bbox_encoding'] in ['mask', 'crop', 'mesh']
         assert config['use_inference_prob'] <= 1
         assert config['unroll_type'] in ['manual', 'dynamic']
         assert config['run_val'] in [True, False]
+        assert config['use_parallel'] in [True, False]
+        assert config['use_tfdataset'] in [True, False]
+
         feeder_cfg = {
             'label_type':config['label_type'],
             'bbox_encoding':config['bbox_encoding'],
             'use_inference_prob': config['use_inference_prob'],
             'data_split': 'train',
         }
-
         data_ref_dir = os.path.join(root_dir, 'Data/ILSVRC2015')
         train_ref = os.path.join(data_ref_dir, 'train_label.npy')
-        self.train_feeder = feeder.Imagenet_VID_Feeder(train_ref, class_num=30, num_unrolls=config['num_unrolls'], config=self.feeder_cfg)
+        self.train_feeder = feeder.Imagenet_VID_Feeder(train_ref, class_num=30, num_unrolls=config['num_unrolls'], config=feeder_cfg)
 
         if config['run_val']:
             feeder_cfg['data_split'] = 'val'
             feeder_cfg['use_inference_prob'] = -1
             val_ref = os.path.join(data_ref_dir, 'val_label.npy')
-            self.val_feeder = feeder.Imagenet_VID_Feeder(val_ref, class_num=30, num_unrolls=config['num_unrolls'], config=self.feeder_cfg)
+            self.val_feeder = feeder.Imagenet_VID_Feeder(val_ref, class_num=30, num_unrolls=config['num_unrolls'], config=feeder_cfg)
         else:
             self.val_feeder = None
 
-        # get tracker
-        assert config['label_norm'] in ['fix', 'dynamic', 'raw']
-        assert config['use_tfdataset'] in [True, False]
-        assert config['use_parallel'] in [True, False]
-        model_cfg = {
-            'label_type':config['label_type'],
-            'bbox_encoding':config['bbox_encoding'],
-            'label_norm': config['label_norm'],
-            'unroll_type': config['unroll_type'],
-        }
+
+        if config['use_parallel']:  # use batch size = 1 for now
+            self.train_feeder_paral = feeder.Parallel_Feeder(self.train_feeder, buffer_size=5, worker_num=1)
+            self.val_feeder_paral = feeder.Parallel_Feeder(self.train_feeder, buffer_size=5, worker_num=1)
 
         if config['use_tfdataset']:
-            pass
+            if config['use_parallel']:
+                dataset = tf.data.Dataset.from_generator(self.train_feeder_paral.iterate_batch(batch_size=1),
+                                                         output_types=(tf.uint8, tf.float32))
+            else:
+                dataset = tf.data.Dataset.from_generator(self.train_feeder.iterate_batch(batch_size=1),
+                                                         output_types=(tf.uint8, tf.float32))
+            dataset = dataset.prefetch(1)  # prefetch next batch
+            dataset_iter = dataset.make_one_shot_iterator()
+            tf_input, tf_label = dataset_iter.get_next()
         else:
             tf_input = tf.placeholder(tf.uint8, shape=[None, None, None, None, ])
             tf_label = tf.placeholder(tf.float32, shape=[None, None, 4])
-            tf_unroll = tf.placeholder(tf.int32)
+        tf_unroll = tf.placeholder(tf.int32)
 
-        self.tracker = constructer.Re3_Tracker()
-
-
-
-        # training config
-        assert config['run_val'] in [True, False]
-        assert config['run_val'] in [True, False]
-        assert config['run_val'] in [True, False]
+        self.tf_input = tf_input
+        self.tf_label = tf_label
+        self.tf_unroll = tf_unroll
 
     def display_img_pred_label(self, track_img, label_box, track_pred):
         fig, ax = plt.subplots(1, figsize=(10,10))
@@ -110,31 +155,31 @@ class Re3_Trainer(object):
             label_rect.remove
             ax.clear()
 
-    def run_train_step_feeddict(self, input_batch, label_batch, display=False):
+    def run_train_step_feeddict(self, input_batch, label_batch, num_unrolls, global_step, display=False):
         '''
         routine to run one train step via feed dict
         '''
         feed_dict = {
-            tracker.tf_input: input_batch,
-            tracker.tf_label: label_batch,
-            tracker.num_unrolls: num_unrolls,
+            self.tracker.tf_input: input_batch,
+            self.tracker.tf_label: label_batch,
+            self.tracker.num_unrolls: num_unrolls,
         }
-        op_to_run = [tracker.train_step]
+        op_to_run = [self.tracker.train_step]
 
         # record summary
         if global_step % 1000 == 0:  # conv, lstm, loss => all summary
-            op_to_run += [tracker.summary['all']]
+            op_to_run += [self.tracker.summary['all']]
         elif global_step % 100 == 0:  # lstm, loss
-            op_to_run += [tracker.summary['lstm'], tracker.summary['loss']]
+            op_to_run += [self.tracker.summary['lstm'], self.tracker.summary['loss']]
         elif global_step % 10 == 0:  # loss
-            op_to_run += [tracker.summary['loss']]
+            op_to_run += [self.tracker.summary['loss']]
 
         # get pred bbox for display
         if display:
-            op_to_run += [tracker.pred]
+            op_to_run += [self.tracker.pred]
 
         # run ops
-        op_output = sess.run([op_to_run], feed_dict=feed_dict)
+        op_output = self.sess.run([op_to_run], feed_dict=feed_dict)
 
         # display
         if display:
