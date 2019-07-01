@@ -389,17 +389,14 @@ class Re3_Tracker(object):
     replicate & extend the re3 tracking model from paper:
     Re3 : Real-Time Recurrent Regression Networks for Visual Tracking of Generic Objects (https://arxiv.org/abs/1705.06368)
     '''
-    def __init__(self, tf_input, tf_label, num_unrolls, prev_state, lstm_size=512, config={}):
+    def __init__(self, tf_input, tf_label, prev_state, lstm_size=512, config={}):
         '''
         tf_input: [batch, time, img_h, img_w, img_channel] for bbox_encoding in ['mask', 'mesh'] => cur img + mask
-                    TODO: change feeder for mask into pre-concat, insstead of tuple (need division anyway)
                   [batch, time, 2, img_h, img_w, img_channel] for bbox_encoding in ['corner', 'center'] => one cur crop, one prev
         tf_label: [batch, time, 4] (x,y,w,h)
-        num_unrolls: determine sequence len of current batch TODO: seems not to need this (able to be dynamicly inferred)
         '''
         self.tf_input = tf_input
         self.tf_label = tf_label
-        self.num_unrolls = num_unrolls
         self.prev_state = prev_state
 
         self.lstm_size = lstm_size
@@ -413,21 +410,20 @@ class Re3_Tracker(object):
         imgnet_mean = [123.151630838, 115.902882574, 103.062623801]
         with tf.variable_scope('preprocess'):
             if self.config['bbox_encoding'] in ['mask', 'mesh']:  # prepare mask: tf_img contain img & mask                
-                self.net = self.tf_input[...,:-1] - imgnet_mean
-                self.img_size = tf.shape(self.net)[2:]  # [img_h, img_w, img_channel]
+                self.net = self.tf_input[...,:3] - imgnet_mean
                 use_spp = True
-                auxilary_input = tf_input[..., -1]  # mask
-                # if self.config['bbox_encoding'] == 'mesh':
-                #     Y, X = tf.meshgrid(tf.range(self.img_size[0]), tf.range(self.img_size[1]), indexing='ij')
-                #     auxilary_input = tf.concat([auxilary_input, Y, X], axis=-1)
+                auxilary_input = tf_input[..., 3:]  # mask & mask-mesh
                 auxilary_input = tfops.conv_layer(auxilary_input, 96, 11, 4, padding='VALID', activation=None)
             else:  # cropping
                 self.net = self.tf_input - imgnet_mean
-                self.img_size = [227, 227, 3]
                 auxilary_input = None
                 use_spp = False
-            self.num_unrolls = tf.shape(self.net)[1]
-            self.net = tf.reshape(self.net, (-1, self.img_size[0], self.img_size[1], self.img_size[2]))  # [-1, img_h, img_w, img_channel]
+
+            input_shape = tf.shape(self.net)
+            batch_size = input_shape[0]
+            num_unrolls = input_shape[1]
+            img_size = tf.shape(self.net)[2:] if use_spp else [227, 227, 3]  # [img_h, img_w, img_channel]
+            self.net = tf.reshape(self.net, (-1, img_size[0], img_size[1], img_size[2]))  # [-1, img_h, img_w, img_channel]
 
         with tf.variable_scope('re3'):
             self.net = tfm.alexnet_conv_layers(self.net, auxilary_input=auxilary_input, use_spp=use_spp) # [-1, feat]
@@ -503,17 +499,23 @@ class Re3_Tracker(object):
         '''
         prev_state = [np.zeros((1, self.lstm_size)) for _ in range(4)]
         out_bbox = [bboxes[0]]  # the initial box
+        prev_input = None
         for img in track:
             if display_func:
                 display_func(img, out_bbox[-1])
-            img = encode_bbox_func(img, out_bbox[-1])  # encode the prev bbox onto current input (cropping, masking, etc.)
+            cur_input = encode_bbox_func(img, out_bbox[-1])  # encode the prev bbox onto current input (cropping, masking, etc.)
+            if self.config['bbox_encoding'] == 'crop' and prev_input is None:
+                cur_input = (prev_input, cur_input)
+            
             feed_dict = {
-                self.tf_input: [img],
-                self.num_unrolls: 1,
+                self.tf_input: [[cur_input]], # batch size 1, single step
                 self.prev_state: prev_state,
             }
             pred, prev_state = sess.run([self.pred, self.lstm_state], feed_dict=feed_dict)
+
             out_bbox.append(decode_bbox_func(out_bbox[-1], pred))  # record bbox under whole img coord
+            if self.config['bbox_encoding'] == 'crop':
+                prev_input = cur_input
         return out_bbox
 
 

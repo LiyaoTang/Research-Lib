@@ -92,98 +92,6 @@ class Sparse_Img_from_txt_Feeder(TF_TXT_Feeder):
         return [input_img, label_msk]
 
 
-class Front_Radar_Points_from_CSV_Feeder(TF_CSV_Feeder):
-    '''
-    construct tf.data pipeline to feed points detected by multiple radars
-    note: the label of these points are in corresponding .yaml file with the same name
-    '''
-    def __init__(self, root_path, record_defaults, select_cols=None, header=True, re_expr='.*\.csv'):
-        super(Front_Radar_Points_from_CSV_Feeder, self).__init__(data_path=root_path,
-                                                                 record_defaults=record_defaults,
-                                                                 select_cols=select_cols,
-                                                                 header=header,
-                                                                 recursive=True,
-                                                                 re_expr=re_expr)
-
-    def _get_label(self, dirpath, csv_name):
-        label_path = os.path.join(dirpath.rstrip('/').rstrip('radar_file') + 'result/', csv_name.rstrip('csv') + 'yaml')
-
-
-class Front_Radar_Points_from_txt_Gen_Feeder(Gen_Feeder):
-    '''
-    read parse & feed the front radar txt file
-    '''
-    def __init__(self, data_dir, class_num, class_name=None, re_expr='dw_((?!_label).)*\.txt', use_onehot=True, weighted=True, norm_type='s'):
-        super(Front_Radar_Points_from_txt_Gen_Feeder, self).__init__(data_dir, class_num, class_name, re_expr, use_onehot)
-        self.mean = 0
-        self.std = 0
-        self.class_ratio = 0
-        self.norm_type = norm_type
-        self.weighted = weighted
-            
-        assert norm_type in ('', 's', 'm')  # '': no normalization, 's': standardized, 'm': mean-centered
-        if norm_type != '' or self.weighted:
-            self._cal_meta_data()
-        self._gen_norm_func()
-
-    def _parse_label_given_input_f(self, input_dir, input_name, use_onehot):
-        path = os.path.join(input_dir, input_name.split('.')[0] + '_label.txt')
-        with open(path, 'r') as f: # all label (excluding coord) read in as int => assume input in the same order as label
-            points_arr = np.array([int(point.split()[-1]) for point in f.read().strip('\n').split('\n')])
-        if use_onehot:
-            points_arr = self._to_onehot(points_arr)
-        return points_arr
-
-    def _parse_input(self, dirpath, name):
-        path = os.path.join(dirpath, name)
-        with open(path, 'r') as f:  # all input (including coord) read in as float
-            # points_arr = np.array([[float(elem) for elem in point.split()] for point in a.strip('\n').split('\n')])
-            points_arr = np.array([[float(elem) for elem in point.split()] for point in f.read().strip('\n').split('\n')])
-        return points_arr
-
-    def _cal_meta_data(self):
-        print('from:', self.data_dir)
-
-        class_ratio = np.zeros(self.class_num, dtype=int)
-        mean = 0
-        std = 0
-        cnt = 0
-        for dirpath, name in self.traverser.traverse_file():
-            points_arr = self._parse_input(dirpath, name)
-            mean = mean + points_arr.sum(axis=0) # accumulate mean
-            cnt += points_arr.shape[0]  # count points
-
-            # accumulate class ratio
-            label_arr = self._parse_label_given_input_f(dirpath, name, False)
-            for i in label_arr: # not one-hot label here
-                class_ratio[i] += 1
-
-        self.class_ratio = class_ratio / cnt
-        self.mean = mean / cnt
-        print('class ratio = ', self.class_ratio, 'class cnt = ', self.class_ratio*cnt)
-        print('mean = ', self.mean)
-
-        for dirpath, name in self.traverser.traverse_file():
-            points_arr = self._parse_input(dirpath, name)
-            for point in points_arr:
-                std = std + (point - mean)** 2
-        self.std = np.sqrt(std / cnt)
-        print('std = ', self.std)
-
-    def _gen_norm_func(self):
-        if self.norm_type == 'm':
-            self.norm_func = lambda x: x - self.mean
-        elif self.norm_type == 's':
-            self.norm_func = lambda x: (x - self.mean) / self.std
-        else:
-            self.norm_func = lambda x: x
-
-    def _get_input_label_pair(self, dirpath, name):
-        input_arr = self.norm_func(self._parse_input(dirpath, name)) # normalized
-        label_arr = self._parse_label_given_input_f(dirpath, name, use_onehot=self.use_onehot)
-        return [input_arr, label_arr]
-
-
 class Corner_Radar_Points_Gen_Feeder(Gen_Feeder):
     '''
     read, parse & feed the radar csv & label yaml file 
@@ -572,22 +480,6 @@ class Corner_Radar_Boxcenter_Gen_Feeder(Gen_Feeder):
         return {'input': cur_input, 'label': cur_label, 'pred': cur_pred, 'img': cur_pic}
 
 
-class Corner_Radar_Points_TF_Feeder(TF_CSV_Feeder):
-    '''
-    construct tf.data pipeline to feed points detected by corner radars
-    note: the label of these points are in corresponding .yaml file with the same name
-    '''
-    def __init__(self, data_path, record_defaults=[tf.int32] * 2 + [tf.float32] * 8, select_cols=None, header=True, re_expr='.*\.csv', recusive=True):
-        super(Corner_Radar_Points_TF_Feeder, self).__init__(data_path=data_path,
-                                                            record_defaults=record_defaults,
-                                                            select_cols=select_cols,
-                                                            header=header,
-                                                            recursive=recusive,
-                                                            re_expr=re_expr)
-    def _get_label(self, dirpath, csv_name):
-        label_path = os.path.join(dirpath.rstrip('/').rstrip('radar_file') + 'result/', csv_name.rstrip('csv') + 'yaml')
-
-
 class Back_Radar_Bbox_Gen_Feeder(Gen_Feeder):
     '''
     read, parse & feed the back radar data from proto (label) and txt (pred output) file
@@ -800,185 +692,6 @@ class Back_Radar_Bbox_Gen_Feeder(Gen_Feeder):
         return [data_dict for data_dict in self._iter_with_metadata_given_file(data_dir, data_name, pred_dir)]
 
 
-class Fusion_Gen_Feeder(Gen_Feeder):
-    def __init__(self, data_dir, class_num=1, class_name=['car'], re_expr='.*\.prototxt', use_onehot=True, split=None,
-                 weight_type='', norm_type='', resolution=0.5, label_type='protobuf', pred_type='txt',
-                 config={'ext_module': {}, 'offset': {'pred': 0, 'label': 0}, 'skip': ''},
-                 data_type='point'):                                                                  
-        super(Fusion_Gen_Feeder, self).__init__(data_dir, class_num, class_name, re_expr=re_expr, use_onehot=use_onehot,
-                                                split=split, weight_type=weight_type, norm_type=norm_type)
-        self.feature_names = []
-        self.resolution = resolution # smallest unit for width, height & any comparance
-        self.config = config
-
-        assert data_type in ['point', 'box']
-        self.data_type = data_type
-
-        assert label_type in ['protobuf']
-        if label_type == 'protobuf':
-            self._parse_file = self._parse_proto_file
-        self.label_type = label_type
-
-        assert pred_type in ['txt']
-        self.pred_type = pred_type
-
-        if 'ext_module' in self.config:
-            for md_name in self.config['ext_module']:
-                md_path = os.path.expanduser(self.config['ext_module'][md_name])
-                sys.path.append(md_path)
-                self.config['ext_module'][md_name] = __import__(md_name, fromlist=[''])
-            self.config['ext_module']['protobuf'] = __import__('google.protobuf', fromlist=[''])
-
-        if 'skip' in self.config:
-            if self.config['skip']:
-                self.config['skip'] = [[int(i) for i in rg.split('-')] for rg in self.config['skip'].split('|')]
-            else:
-                self.config.pop('skip', None)  # delete excluded time
-
-    def _parse_proto_label_box(self, pb_obstacle, points, points_xy, points_label=None):
-        # bbox position & size
-        x = pb_obstacle.label_rect.x
-        y = pb_obstacle.label_rect.y
-        w = pb_obstacle.label_rect.w
-        h = pb_obstacle.label_rect.h
-        
-        box_cartx = min([-y, -y + h])
-        box_carty = min([x, x + w])
-        box_w = abs(h)
-        box_h = abs(w)
-
-        idx = np.where(np.logical_and.reduce([box_cartx < points_xy[:, 0], points_xy[:, 0] < box_cartx + box_w,
-                                              box_carty < points_xy[:, 1], points_xy[:, 1] < box_carty + box_h]))
-        elem = points[idx].copy()
-        if self.data_type == 'point':
-            points_label[idx] = 1
-
-        # print('%.2f\t%.2f\t%.2f' % (self.resolution, points_w, pb_obstacle.object_size.y))
-        # print('%.2f\t%.2f\t%.2f\t' % (self.resolution, points_h, pb_obstacle.object_size.x))
-        # print('------------------')
-        try:
-            blockage = pb_obstacle.cover_rate
-        except:
-            blockage = 0
-        
-        return {'xy': (box_cartx + box_w / 2, box_carty + box_h / 2), 'width': box_w, 'height': box_h,
-                'prob': [1], 'elem': elem, 'blockage': blockage}
-
-    def _parse_proto_labelframe(self, label_frame):
-        points = [[p.group_id,
-                   p.coordinate_car.x,
-                   p.coordinate_car.y,
-                   p.velocity.x,
-                   p.velocity.y,
-                   p.rcs,
-                   p.orientation_angle]for p in label_frame.points if p.track_status != 0]
-        points = np.array(points)
-        points_xy = np.concat(points[:, [1, 2]])
-        if self.data_type == 'point':
-            points_label = np.zeros(points.shape[0])
-        else:
-            points_label = None
-            
-        bbox_deflist = []
-        for ob in label_frame.obstacles:
-            bbox_def = self._parse_proto_label_box(ob, points, points_xy, points_label)
-            bbox_deflist.append(bbox_def)
-
-        # return [time, [bbox_def], [point], [xy], points_label]
-        return [int(label_frame.timestamp * 1e6), bbox_deflist, points, points_xy, points_label]
-        
-    def _parse_proto_file(self, dirpath, name):
-        with open(os.path.join(dirpath, name), 'rb') as f:
-            ptxt_bt = f.read()
-        rst = self.config['ext_module']['radar_label_pb2'].LabelResultData()
-        try:
-            self.config['ext_module']['protobuf'].protobuf.text_format.Merge(ptxt_bt, rst)  # read from non-python
-        except:
-            rst.ParseFromString(ptxt_bt)  # read from python
-
-        # generator for [time, [bbox_def], [point], points_label]
-        data_gen = (self._parse_proto_labelframe(frame) for frame in rst.label_data)
-        if 'offset' in self.config and 'label' in self.config['offset']:
-            for _ in range(self.config['offset']['label']):
-                next(data_gen)
-        return data_gen
-
-    def _parse_pred_bbox(self, line, input_points=[]):
-        # obstacle id, time_stamp, pos_x, pos_y, width, length, heading, vel_x, vel_y
-        # vel => velocity, pos => central position under car coord
-        line = line.split()
-        cart_x = -float(line[3])
-        cart_y = float(line[2])
-        w = max(self.resolution, float(line[4]))
-        h = max(self.resolution, float(line[5]))
-        elem = [p for p in input_points if p[0] > cart_x and p[1] > cart_y and p[0] < cart_x + w and p[1] < cart_y + h]  # all points in box
-        return {'xy': (cart_x - w / 2, cart_y - h / 2), 'width': w, 'height': h, 'prob': [1], 'elem': elem}
-
-    def _parse_pred_lines(self, lines, input_points=[], label_time=-1):
-        cur_time = int(lines[0])  # time stamp
-        pred_bboxlist = [self._parse_pred_bbox(line, input_points) for line in lines[1:]]  # 0-1-more bbox def
-        return cur_time, pred_bboxlist
-
-    def _get_pred_name(self, name):
-        return name.split('.')[0] + '.' + self.pred_type
-
-    def _parse_pred_file_to_segment(self, dirpath, name):
-        with open(os.path.join(dirpath, self._get_pred_name(name)), 'r') as f:
-            exp_list = f.read().strip('\n').split('\n\n')
-        seg_gen = (exp.split('\n') for exp in exp_list)
-
-        if 'offset' in self.config and 'pred' in self.config['offset']:
-            for i in range(self.config['offset']['pred']):
-                next(seg_gen)
-        return seg_gen
-
-    def _get_input_label_pair(self, dirpath, name):
-        data_gen = self._parse_file(dirpath, name)
-        if self.data_type == 'point':
-            for _, _, points, _, points_label in data_gen:
-                yield points, points_label
-        else:
-            raise NotImplementedError
-
-    def _iter_with_metadata_given_file(self, data_dir, data_name, pred_dir):
-        data_gen = self._parse_file(data_dir, data_name)
-        predseg_gen = self._parse_pred_file_to_segment(pred_dir, data_name)
-
-        for label_time, label_bboxlist, cur_input, input_xy, points_label in data_gen:
-
-            pred_lines = next(predseg_gen)
-            pred_time, pred_bboxlist = self._parse_pred_lines(pred_lines, input_points=cur_input)
-
-            if 'skip' in self.config:
-                for rg in self.config['skip']:
-                    while rg[0] <= pred_time and pred_time <= rg[1]:  # skip through current exclude range
-                        print('skip ', pred_time)
-                        pred_lines = next(predseg_gen)
-                        pred_time, pred_bboxlist = self._parse_pred_lines(pred_lines, input_points=[])
-
-            # fix pred to find corresponding label (especially after skip)
-            while label_time < pred_time:
-                label_time, label_bboxlist, cur_input, input_xy, points_label = next(data_gen)
-                _, pred_bboxlist = self._parse_pred_lines(pred_lines, input_points=cur_input)
-
-            assert pred_time == label_time
-
-            yield {'input': cur_input, 'input_xy': input_xy, 'label': label_bboxlist, 'pred': pred_bboxlist, 'time_stamp': pred_time}
-
-    def iterate_with_metadata(self, pred_dir):
-        '''
-        iterate data example with aligned recorded prediction
-        '''
-        for dirpath, name in self.traverser.traverse_file():
-            yield from self._iter_with_metadata_given_file(dirpath, name, pred_dir)
-
-    def load_with_metadata(self, data_dir, data_name, pred_dir):
-        '''
-        load data in one file into a list of dict with corresponding prediction & input
-        '''
-        return [data_dict for data_dict in self._iter_with_metadata_given_file(data_dir, data_name, pred_dir)]
-
-
 class Imagenet_VID_Feeder(Feeder):
     '''
     feeder to read from imagenet VID dataset, given a prepared list of references;
@@ -997,8 +710,8 @@ class Imagenet_VID_Feeder(Feeder):
         else:
             self.imread = lambda path: self.img_lib.imread(path)
         
-        self.mode = mode  # MOT possibly contains multiple tracks in a frame
         assert self.mode in ['VOT', 'MOT']
+        self.mode = mode  # MOT possibly contains multiple tracks in a frame
 
         assert config['label_type'] in ['corner', 'center']
         if config['label_type'] == 'corner':
@@ -1011,13 +724,16 @@ class Imagenet_VID_Feeder(Feeder):
         assert config['bbox_encoding'] in ['mask', 'crop', 'mesh']
         if config['bbox_encoding'] == 'crop':
             self._encode_bbox = self._encode_bbox_crop  # encode bbox to both input img & label
-            self.decode_bbox = self._decode_bbox_crop # decode pred to bbox on full image
+            self.decode_bbox = self._decode_bbox_crop  # decode pred to bbox on full image
+            self._get_input_label_pair = self._get_input_label_pair_crop # feed pair of crop
         elif config['bbox_encoding'] == 'mesh':
             self._encode_bbox = self._encode_bbox_mesh_mask
             self.decode_bbox = self._decode_bbox_mask
+            self._get_input_label_pair = self._get_input_label_pair_mask # feed full img with mask
         else:  # mask encodeing
             self._encode_bbox = self._encode_bbox_mask
             self.decode_bbox = self._decode_bbox_mask
+            self._get_input_label_pair = self._get_input_label_pair_mask
 
         assert config['use_inference_prob'] <= 1  # set to negative to disable
 
@@ -1085,18 +801,19 @@ class Imagenet_VID_Feeder(Feeder):
         mask[ymin:ymax, xmin:xmax] = 1
         return mask[...,np.newaxis]
 
-    def _encode_bbox_mask(self, img, prev_box, cur_box):
+    def _encode_bbox_mask(self, img, prev_box, cur_box)::
         img_shape = np.array(img.shape)
         mask = self._get_mask(img_shape, prev_box)
-        return (img, mask), self._convert_label_type(cur_box)
+        img = np.concatenate([img, mask], axis=-1)
+        return img, self._convert_label_type(cur_box)
     
     def _encode_bbox_mesh_mask(self, img, prev_box, cur_box):
         # additionally provide network with pixel location [i,j] at each location
         img_shape = np.array(img.shape)
         mask = self._get_mask(img_shape, prev_box)
         Y, X = np.meshgrid(img_shape[0], img_shape[1])
-        mask = np.concatenate([mask, Y[..., np.newaxis], X[..., np.newaxis]], axis=-1)
-        return (img, mask), self._convert_label_type(cur_box)
+        img = np.concatenate([img, mask, Y[..., np.newaxis], X[..., np.newaxis]], axis=-1)
+        return img, self._convert_label_type(cur_box)
 
     def _encode_bbox_crop(self, img, prev_box, cur_box, crop_size=227):
         x, y, w, h = self._xyxy_to_xywh(prev_box)  # prev_box from original imagenet label
@@ -1161,10 +878,36 @@ class Imagenet_VID_Feeder(Feeder):
         xyxy_box = self._clip_bbox_from_ref(ref, image_shape)
         return xyxy_box, xyxy_box
 
-    def _get_input_label_pair(self, ref):
-        # TODO: generate pair of images at time [t, t-1], for feeding 'crop'
+    def _get_input_label_pair_crop(self, ref):
+        # generate pair of images of time [t, t-1] as net input at time t
         ref = self._original_refs[ref:ref + self.num_unrolls]  # get original_ref for a track
+        if np.random.rand() < self.config['use_inference_prob']:
+            return self._get_input_label_from_inference(ref)
 
+        input_seq = []
+        label_seq = []
+        prev_box = None
+        prev_input = None
+        for r in ref:  # for original_ref in a track/video
+            cur_img = self._get_img(r)
+            cur_box = self._clip_bbox_from_ref(r, np.array(cur_img.shape))  # xyxy box
+
+            if prev_box is None:
+                prev_box = cur_box
+            cur_input, cur_label = self._encode_bbox(cur_img, prev_box, cur_box)
+
+            if prev_input is None:
+                prev_input = cur_input
+            input_seq.append((prev_input, cur_input))
+            label_seq.append(cur_label)
+
+            prev_box = cur_box
+            prev_input = cur_input
+        return input_seq, label_seq
+
+    def _get_input_label_pair_mask(self, ref):
+        # generate mask based on label box of time t-1
+        ref = self._original_refs[ref:ref + self.num_unrolls]  # get original_ref for a track
         if np.random.rand() < self.config['use_inference_prob']:
             return self._get_input_label_from_inference(ref)
 
@@ -1202,12 +945,19 @@ class Imagenet_VID_Feeder(Feeder):
         input_seq = []
         label_seq = []
         prev_box = None
+        prev_input = None
         for cnt in range(len(ref)):
             img = img_seq[cnt]
             label_box = box_seq[cnt]
             prev_box = box_seq[0] if cnt == 0 else pred_seq[cnt - 1]
             cur_input, cur_label = self._encode_bbox(img, prev_box, label_box)
 
+            if self.config['bbox_encoding'] == 'crop' and prev_input is None:
+                cur_input = (cur_input, prev_input)
             input_seq.append(cur_input)
             label_seq.append(cur_label)
+
+            if self.config['bbox_encoding'] == 'crop':
+                prev_input = cur_input
+
         return input_seq, label_seq

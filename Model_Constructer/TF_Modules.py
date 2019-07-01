@@ -78,9 +78,10 @@ def alexnet_conv_layers(input, auxilary_input=None, prelu_initializer=tf.constan
 
     return feat_concat
 
-def re3_lstm_tracker(input, num_unrolls, lstm_size=512, prev_state=None, rnn_type='lstm'):
+def re3_lstm_tracker(input, num_unrolls, prev_state, lstm_size=512, rnn_type='lstm'):
     '''
     input: object features in time sequence, expected to be [batch, time, feat_t + feat_t-1], with time = num_unrolls
+    prev_state: the initial state for RNN cell, set to placeholder to enable single-step inference
     TODO: migrate to TF 2.0: 
         contrib.rnn.LSTMCell -> keras.layers.LSTMCell
         contrib.rnn.LSTMStateTuple -> get_initial_tuple

@@ -93,21 +93,26 @@ data_ref_dir = os.path.join(root_dir, 'Data/ILSVRC2015')
 train_ref = os.path.join(data_ref_dir, 'train_label.npy')
 train_feeder = feeder.Imagenet_VID_Feeder(train_ref, class_num=30, num_unrolls=args.num_unrolls)
 
+feeder_cfg['data_split'] = 'val'
+feeder_cfg['use_inference_prob'] = -1
+val_ref = os.path.join(data_ref_dir, 'val_label.npy')
+val_feeder = feeder.Imagenet_VID_Feeder(val_ref, class_num=30, config=feeder_cfg)
+
+
 if args.tf_dataset:
     if args.use_parallel:
-        feeder = feeder.Parallel_Feeder(train_feeder, batch_size=1, buffer_size=args.buffer_size, worker_num=args.worker_num)
+        actual_feeder = feeder.Parallel_Feeder(train_feeder, batch_size=1, buffer_size=args.buffer_size, worker_num=args.worker_num)
     else:
-        feeder = train_feeder
-    feeder_gen = para_train_feeder.iterate_batch(1)
+        actual_feeder = train_feeder
+    feeder_gen = actual_feeder.iterate_batch(1)
     tf_dataset = tf.data.Dataset.from_generator(feeder_gen, (tf.uint8, tf.float32))
     tf_dataset = tf_dataset.prefetch(1)
     tf_dataset_iter = tf_dataset.make_one_shot_iterator()
     tf_input, tf_label = tf_dataset_iter.get_next()
 else:
     tf_input = tf.placeholder(tf.uint8, shape=[None, None, None, None, args.channel_size])
-    tf_label = tf.placeholder(tf.float32, shape=[args.batch_size, None, 4])
-tf_unroll = tf.placeholder(tf.int32)
-prev_state = tf.placeholder()
+    tf_label = tf.placeholder(tf.float32, shape=[None, None, 4])
+tf_prev_state = [tf.placeholder(tf.float32, shape=(1, args.lstm_size)) for _ in range(4)]
 
 def display_img_pred_label(track_img, label_box, track_pred):
     fig, ax = plt.subplots(1, figsize=(10,10))
@@ -140,8 +145,7 @@ sess = constructer.tfops.Session()
 saver = tf.train.Saver()
 longSaver = tf.train.Saver()
 
-
-tracker = constructer.Re3_Tracker(tf_input, tf_label, num_unrolls=tf_unroll, prev_state=,
+tracker = constructer.Re3_Tracker(tf_input, tf_label, prev_state=tf_prev_state,
                                   lstm_size=args.lstm_size,
                                   unroll_type=args.unroll_type,
                                   bbox_encoding=args.bbox_encoding)
