@@ -60,25 +60,4 @@ python tf-fcnpipe.py --conv ${conv} \
                     #  &
                     # --rand_seed ${rand} \
 done
-
-# reg_type=""
-# loss_type="crf"
-# learn_rate="3e-5"
-# python tf-fcnpipe.py --conv ${conv} \
-#                     --select_cols ${cols} \
-#                     --norm_type "$norm_type" \
-#                     --reg_type "$reg_type" \
-#                     --reg_scale "$reg_scale" \
-#                     --batchnorm ${bn} \
-#                     --learning_rate ${learn_rate} \
-#                     --class_name "non-center;car-center" \
-#                     --weighted_loss "$weight" \
-#                     --train  ${train_path} \
-#                     --batch 1 \
-#                     --epoch 30 \
-#                     --loss_type ${loss_type}
-#                     # --log ""
-#                     #  &
-#                     # --rand_seed ${rand} \
-
 wait

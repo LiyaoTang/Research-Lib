@@ -43,11 +43,11 @@ def leaky_relu(input, slope=0.01, name='lrelu'):
         return tf.nn.relu(input) - slope * tf.nn.relu(-input)
 
 
-def prelu(input, weights=None, initializer=tf.constant_initializer(0.25), name='prelu'):
+def prelu(input, weights=None, initializer=tf.constant_initializer(0.25), scope='prelu', name='prelu'):
     # tf 2.0: tf.keras.layers.PReLU(): sharing parameter inside layer
+    if weights is None:
+        weights = get_variable(name, shape=[input.get_shape().as_list()[-1]], initializer=initializer)
     with tf.variable_scope(name):
-        if weights is None:
-            weights = get_variable('weights', shape=[input.get_shape().as_list()[-1]], initializer=initializer)
         return tf.nn.relu(input) - weights * tf.nn.relu(-input)
 
 
@@ -123,9 +123,9 @@ def spatial_pyramid_pooling(input, bin_dimensions, pooling_mode='max', scope='sp
         ValueError: If `mode` is neither `max` nor `avg`.
     """
     if pooling_mode == 'max':
-        pooling_op = math_ops.reduce_max
+        pooling_op = tf.math.reduce_max
     elif pooling_mode == 'avg':
-        pooling_op = math_ops.reduce_mean
+        pooling_op = tf.math.reduce_mean
     else:
         msg = "Mode must be either 'max' or 'avg'. Got '{0}'"
         raise ValueError(msg.format(pooling_mode))
@@ -134,30 +134,34 @@ def spatial_pyramid_pooling(input, bin_dimensions, pooling_mode='max', scope='sp
         result = []
         for row in range(bin_dimension):
             for col in range(bin_dimension):
-                start_h = math_ops.cast(math_ops.floor(math_ops.multiply(
-                    math_ops.divide(row, bin_dimension), input_height)), tf.dtypes.int32)
-                end_h = math_ops.cast(math_ops.ceil(math_ops.multiply(
-                    math_ops.divide((row + 1), bin_dimension), input_height)), tf.dtypes.int32)
-                start_w = math_ops.cast(math_ops.floor(math_ops.multiply(
-                    math_ops.divide(col, bin_dimension), input_width)), tf.dtypes.int32)
-                end_w = math_ops.cast(math_ops.ceil(math_ops.multiply(
-                    math_ops.divide((col + 1), bin_dimension), input_width)), tf.dtypes.int32)
+                start_h = tf.cast(tf.math.floor(row / bin_dimension * input_height), tf.dtypes.int32)
+                end_h = tf.cast(tf.math.ceil((row + 1) / bin_dimension * input_height), tf.dtypes.int32)
+                start_w = tf.cast(tf.math.floor(col / bin_dimension * input_width), tf.dtypes.int32)
+                end_w = tf.cast(tf.math.ceil((col + 1) / bin_dimension * input_width), tf.dtypes.int32)
 
-            pooling_region = input[:, start_h:end_h, start_w:end_w, :]
-            pool_result = pooling_op(pooling_region, axis=(1, 2))
-            result.append(pool_result)
+                pooling_region = input[:, start_h:end_h, start_w:end_w, :]
+                pool_result = pooling_op(pooling_region, axis=(1, 2))
+                result.append(pool_result)
         return result
 
     with tf.variable_scope(scope):
-        inputs_shape = array_ops.shape(input)
-        input_height = math_ops.cast(array_ops.gather(inputs_shape, 1), tf.dtypes.float32)
-        input_width = math_ops.cast(array_ops.gather(inputs_shape, 2), tf.dtypes.float32)
+        inputs_shape = tf.shape(input)
+        input_height = tf.cast(inputs_shape[1], tf.dtypes.float32)
+        input_width = tf.cast(inputs_shape[2], tf.dtypes.float32)
 
-        pool_list = []
+        pool_list = []  # collect all tensor output into a single list
         for bin_dimension in bin_dimensions:
             with tf.variable_scope('bin_%d' % bin_dimension):
-                pool_list += spp_in_bins(input, bin_dimension)  # collect all tensor output into a single list
-    return array_ops.concat(values=pool_list, axis=1)
+                pool_list += spp_in_bins(input, bin_dimension, input_width, input_height)
+
+        # recursive concat to avoid large op (s.t. optimizer can manage the topological order of graph)
+        concat = []
+        concat_len = 10
+        while len(pool_list) > 1:
+            end_idx = concat_len if len(pool_list) > concat_len else len(pool_list)
+            concat = [tf.concat(concat + pool_list[:end_idx], axis=1)]
+            pool_list = pool_list[end_idx:]
+    return concat[0]
 
 
 '''operation'''
@@ -205,7 +209,7 @@ def dense_layer(input, num_channels, activation=tf.nn.relu, weights_initializer=
 
 
 def conv_layer(input, out_channels, filter_size, stride=1, num_groups=1, padding='VALID', scope=None,
-               activation=tf.nn.relu, weights_initializer=None, bias_initializer=None, return_vars=False, summary=True):
+               activation=tf.nn.relu, weights_initializer=None, bias_initializer=None, return_vars=False, summary=False):
     if type(filter_size) == int:
         filter_width = filter_size
         filter_height = filter_size
@@ -232,15 +236,17 @@ def conv_layer(input, out_channels, filter_size, stride=1, num_groups=1, padding
         W_conv = get_variable('W_conv', shape, initializer=weights_initializer, summary=summary)
         b_conv = get_variable('b_conv', [out_channels], initializer=bias_initializer, summary=summary)
         if summary:
-            conv_variable_summaries(W_conv)
+            w_summary = conv_variable_summaries(W_conv)
         conv_out = conv(input, W_conv, b_conv, stride_width, stride_height, padding, num_groups)
         if activation is not None:
             conv_out = activation(conv_out)
-        if return_vars:
-            return conv_out, W_conv, b_conv
-        else:
-            return conv_out
 
+        rtn = tuple([conv_out])
+        if return_vars:
+            rtn += (W_conv, b_conv)
+        if summary:
+            rtn += (w_summary)
+        return rtn[0] if len(rtn) == 1 else rtn
 
 def rnn_gru_layer(input, rnn_size, batch_size, num_unrolls, bi_direct=False):
     '''
@@ -316,19 +322,19 @@ def restore(session, save_file, restore_vars={}, raise_if_not_found=False, verbo
             if 'global_step' in var.name:  # training op
                 restored_var_names.add(op_name)
                 continue
-            var_shape = var.get_shape().as_list()  # checking shape
-            if var_shape == saved_shapes[op_name]:
+            v_shape = var.get_shape().as_list()  # checking shape
+            if v_shape == saved_shapes[op_name]:
                 restored_var_names.add(op_name)
                 restore_vars[op_name] = var
             else:
-                print('Shape mismatch for var', op_name, 'expected', var_shape, 'got', saved_shapes[op_name])
+                print('Shape mismatch for var', op_name, 'expected', v_shape, 'got', saved_shapes[op_name])
                 # restored_var_new_shape.append((saved_var_name, cur_var, reader.get_tensor(saved_var_name)))
                 # print('bad things')
     # print info
     for k, v in restore_vars.items():
         v_name = v.name.split(':')[0]
         v_shape = v.get_shape().as_list()
-        v_size = int(np.prod(var_shape) * 4 / 10 ** 6)
+        v_size = int(np.prod(v_shape) * 4 / 10 ** 6)
         print('%s -> \t %s, shape %s = %dMB' % (k, v_name, str(v_shape), v_size))
 
     ignored_var_names = sorted(list(set(saved_shapes.keys()) - restored_var_names))
@@ -392,7 +398,7 @@ def Session():
 
 def kernel_to_image(data, padsize=1, padval=0):
     '''
-    turns a convolutional kernel into an image of nicely tiled filters
+    turns a convolutional kernel into an image of nicely tiled filters, assume kernel has in_channel=3
     useful for visualization purposes
     '''
     if len(data.get_shape().as_list()) > 4:
@@ -461,14 +467,18 @@ def conv_variable_summaries(var, scope=''):
         scope = '/' + scope
     with tf.name_scope('summaries/conv' + scope):
         var_shape = var.get_shape().as_list()
-        if not(var_shape[0] == 1 and var_shape[1] == 1):
+        sum_op = None
+        if not (var_shape[0] == 1 and var_shape[1] == 1):  # not summarying 1x1 conv
             if var_shape[2] < 3:
                 var = tf.tile(var, [1, 1, 3, 1])
                 var_shape = var.get_shape().as_list()
-            kernel_img = kernel_to_image(tf.slice(var, [0, 0, 0, 0], [var_shape[0], var_shape[1], 3, var_shape[3]]))
+            # slice out the first 3 channel for the input of W_conv => [width, height, in_channel=3, out_channel]
+            var_slice = tf.slice(var, [0, 0, 0, 0], [var_shape[0], var_shape[1], 3, var_shape[3]])
+            kernel_img = kernel_to_image(var_slice)
             summary_image = tf.expand_dims(kernel_img, 0)
             with tf.device('/cpu:0'):
                 sum_op = tf.summary.image('filters', summary_image)
+            return sum_op
     return sum_op
 
 

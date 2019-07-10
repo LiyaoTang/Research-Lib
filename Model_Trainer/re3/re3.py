@@ -14,255 +14,96 @@ import random
 import psutil
 import argparse
 
-import numpy as np
-import tensorflow as tf
-import matplotlib as mlt
-import matplotlib.pyplot as plt
-
-import Data_Feeder as feeder
-import Model_Analyzer as analyzer
-import Model_Constructer as constructer
-from constructer import tfops
+import Re3_Trainer as trainer
 
 DEBUG = True
 
 ''' parsing args '''
 
+def str2bool(v):
+    if isinstance(v, bool):
+       return v
+    if v.lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+        return False
+    else:
+        raise argparse.ArgumentTypeError('boolean value expected, given ', type(v))
+parser = argparse.ArgumentParser(description='training re3')
 
-parser = constructer.ArgumentParser(description='training re3')
+parser.add_argument('--attention', type=str, dest='attention')
 parser.add_argument('--num_unrolls', default=2, type=int, dest='num_unrolls')
 parser.add_argument('--lstm_size', default=512, type=int, dest='lstm_size')
-parser.add_argument('--lrn_rate', default=None, type=int, dest='lrn_rate')
+parser.add_argument('--lrn_rate', default=None, type=float, dest='lrn_rate')
 
+parser.add_argument('--fuse_type', default='spp', type=str, dest='fuse_type')
+parser.add_argument('--label_type', default='center', type=str, dest='label_type')
 parser.add_argument('--label_norm', default='dynamic', type=str, dest='label_norm')
 parser.add_argument('--unroll_type', default='dynamic', type=str, dest='unroll_type')
 parser.add_argument('--bbox_encoding', default='mask', type=str, dest='bbox_encoding')
-
-parser.add_argument('--max_step', default=1e6, type=int, dest='max_step')
-parser.add_argument('--rand_seed', default=None, type=int, dest='rand_seed')
-
-parser.add_argument('--label_type', default='center', type=str, dest='label_type')
-parser.add_argument('--run_val', default=True, type=bool, dest='run_val')
-parser.add_argument('--worker_num', default=1, type=int, dest='worker_num')
-parser.add_argument('--buffer_size', default=5, type=int, dest='buffer_size')
-parser.add_argument('--use_parallel', default=True, type=bool, dest='use_parallel')
-parser.add_argument('--use_tfdataset', default=True, type=bool, dest='use_tfdataset')
 parser.add_argument('--use_inference_prob', default=-1, type=float, dest='use_inference_prob')
 
+parser.add_argument('--max_step', default=1e6, type=float, dest='max_step')
+parser.add_argument('--rand_seed', default=None, type=int, dest='rand_seed')
+
+parser.add_argument('--run_val', default=True, type=str2bool, dest='run_val')
+parser.add_argument('--worker_num', default=1, type=int, dest='worker_num')
+parser.add_argument('--buffer_size', default=5, type=int, dest='buffer_size')
+parser.add_argument('--use_parallel', default=True, type=str2bool, dest='use_parallel')
+parser.add_argument('--use_tfdataset', default=False, type=str2bool, dest='use_tfdataset')
+
+
+parser.add_argument('--model_name', type=str, dest='model_name')
+parser.add_argument('--root_dir', default='../../', type=str, dest='root_dir')
 parser.add_argument('--log_dir', default='./Log', type=str, dest='log_dir')
 parser.add_argument('--model_dir', default='./Model', type=str, dest='model_dir')
 parser.add_argument('--summary_dir', default='./Summary', type=str, dest='summary_dir')
-parser.add_argument('--restore', default=True, type=bool, dest='restore')
-parser.add_argument('--restore_dir', default='', type=str, dest='restore_dir')
+parser.add_argument('--restore', default=True, type=str2bool, dest='restore')
+parser.add_argument('--restore_dir', default=None, type=str, dest='restore_dir')
+
+parser.add_argument('--debug', default=True, type=str2bool, dest='debug')
+parser.add_argument('--display', default=False, type=str2bool, dest='display')
 
 args = parser.parse_args()
 
-args.batch_size = int(max(64 / args.num_unrolls, 2))
-args.channel_size = 4 if args.bbox_encoding in ['mask', 'mesh'] else 3
-assert args.img_size in [None, 227]
 if args.rand_seed is not None:
     np.random.seed(args.rand_seed)
     tf.random.set_random_seed(args.rand_seed)
-if not args.restore_dir:
-    args.restore_dir = args.model_dir
-    
+
 # model name
-tt = time.localtime()
-time_str = ('%04d_%02d_%02d_%02d_%02d_%02d' % (tt.tm_year, tt.tm_mon, tt.tm_mday, tt.tm_hour, tt.tm_min, tt.tm_sec))
-args.model_name = 're3-%s_un%d_img%d_lstm%d_b%d_e%d' % \
-                  (args.bbox_encoding, args.num_unrolls, args.img_size, args.lstm_size, args.batch_size, args.epoch)
-args.model_name += '' if args.rand_seed is None else '_r%d' % args.rand_seed
-args.model_name += time_str
+if not args.model_name:
+    tt = time.localtime()
+    time_str = ('_%04d_%02d_%02d_%02d_%02d_%02d' % (tt.tm_year, tt.tm_mon, tt.tm_mday, tt.tm_hour, tt.tm_min, tt.tm_sec))
+    args.model_name = 're3-%s_lstm%d_%s_%s_%s_%s' % (args.bbox_encoding, args.lstm_size, args.attention, \
+                                                     args.label_type, args.label_norm, args.fuse_type)
+    args.model_name += '' if args.rand_seed is None else '_r%d' % args.rand_seed
+    args.model_name += time_str
+
+# config dir path
+if not args.restore_dir:
+    args.restore_dir = os.path.join(args.model_dir, 're3')
+args.max_step = int(args.max_step)
+args.model_dir = os.path.join(args.model_dir, args.model_name)
 
 # make dirs
-os.makedirs(args.log_dir, exist_ok=True)
 os.makedirs(args.model_dir, exist_ok=True)
 os.makedirs(args.summary_dir, exist_ok=True)
 
 
-''' construct feeder '''
-
-
-feeder_cfg = {
-    'label_type': args.label_type,
-    'bbox_encoding':'crop',
-    'use_inference_prob':-1,
-    'data_split': 'train',
-}
-data_ref_dir = os.path.join(root_dir, 'Data/ILSVRC2015')
-train_ref = os.path.join(data_ref_dir, 'train_label.npy')
-train_feeder = feeder.Imagenet_VID_Feeder(train_ref, class_num=30, num_unrolls=args.num_unrolls)
-
-feeder_cfg['data_split'] = 'val'
-feeder_cfg['use_inference_prob'] = -1
-val_ref = os.path.join(data_ref_dir, 'val_label.npy')
-val_feeder = feeder.Imagenet_VID_Feeder(val_ref, class_num=30, config=feeder_cfg)
-
-
-if args.tf_dataset:
-    if args.use_parallel:
-        actual_feeder = feeder.Parallel_Feeder(train_feeder, batch_size=1, buffer_size=args.buffer_size, worker_num=args.worker_num)
-    else:
-        actual_feeder = train_feeder
-    feeder_gen = actual_feeder.iterate_batch(1)
-    tf_dataset = tf.data.Dataset.from_generator(feeder_gen, (tf.uint8, tf.float32))
-    tf_dataset = tf_dataset.prefetch(1)
-    tf_dataset_iter = tf_dataset.make_one_shot_iterator()
-    tf_input, tf_label = tf_dataset_iter.get_next()
+# change std out if log dir originally given
+if args.log_dir:
+    os.makedirs(args.log_dir, exist_ok=True)
+    log_file_path = os.path.join(args.log_dir, args.model_name)
+    log_file = open(log_file_path, 'w')
+    sys.stdout = log_file
+    print(args.model_name)
+    print(args.use_tfdataset)
 else:
-    tf_input = tf.placeholder(tf.uint8, shape=[None, None, None, None, args.channel_size])
-    tf_label = tf.placeholder(tf.float32, shape=[None, None, 4])
-tf_prev_state = [tf.placeholder(tf.float32, shape=(1, args.lstm_size)) for _ in range(4)]
+    log_file = ''
 
-def display_img_pred_label(track_img, label_box, track_pred):
-    fig, ax = plt.subplots(1, figsize=(10,10))
-    for img, label, pred in zip(track_img, label_box, track_pred):  # assume xyxy box
-        pred_rect = mlt.patches.Rectangle((pred[[0, 1]]), pred[2] - pred[0], pred[3] - pred[1], color='g', fill=False)
-        label_rect = mlt.patches.Rectangle((label[[0, 1]]), label[2] - label[0], label[3] - label[1], color='r', fill=False)
-
-        ax.imshow(img)
-        ax.add_patches(label_rect)
-        ax.add_patches(pred_rect)
-        fig.canvas.draw()
-        plt.show()
-        plt.waitforbuttonpress()
-        pred_rect.remove()
-        label_rect.remove
-        ax.clear()
-
-
-''' metric recoder '''
-
-
-train_recorder = analyzer.Tracking_SOT_Record()
-val_recorder = analyzer.Tracking_SOT_Record()
-
-
-''' construct model '''
-
-
-sess = constructer.tfops.Session()
-saver = tf.train.Saver()
-longSaver = tf.train.Saver()
-
-tracker = constructer.Re3_Tracker(tf_input, tf_label, prev_state=tf_prev_state,
-                                  lstm_size=args.lstm_size,
-                                  unroll_type=args.unroll_type,
-                                  bbox_encoding=args.bbox_encoding)
-learning_rate = tf.placeholder(tf.float32) if args.lrn_rate is None else args.lrn_rate
-train_step = tracker.get_train_step(learning_rate)
-summary_op = tracker.summary['all']
-
-# logging validation
-val_scope = 'val'
-with tf.variable_scope(val_scope):
-    robustness_ph = tf.placeholder(tf.float32, shape=[])
-    lost_targets_ph = tf.placeholder(tf.float32, shape=[])
-    mean_iou_ph = tf.placeholder(tf.float32, shape=[])
-    avg_ph = tf.placeholder(tf.float32, shape=[])
-    val_tracker = constructer.Re3_Tracker(tf_img, tf_label,
-                                        num_unrolls=args.num_unrolls,
-                                        img_size=args.img_size,
-                                        lstm_size=args.lstm_size,
-                                        unroll_type=args.unroll_type,
-                                        bbox_encoding=args.bbox_encoding)
-    val_vars = list(tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=val_scope))
-    restore_dict = dict([v.name.strip(val_scope + '/').split(':')[0] for v in val_vars], val_vars)
-    val_model = constructer.Val_Model(sess, val_tracker, feeder, val_recorder, var_dict=restore_dict)
-
-
-''' training '''
-
-
-# initialize/restore
-global_step = 0
-sess.run(tf.global_variables_initializer())
-if args.restore:
-    global_step = tfops.restore_from_dir(sess, args.restore_dir)
-
-# writer for tf.summary io
-sess.graph.finalize()
-summary_writer = tf.summary.FileWriter(os.path.join(args.summary_dir, args.model_name), sess.graph)
-
-# routine to update model
-def run_train_step_feeddict(input_batch, label_batch, display=False):
-    feed_dict = {
-        tracker.tf_input: input_batch,
-        tracker.tf_label: label_batch,
-        tracker.num_unrolls: num_unrolls,
-    }
-    op_to_run = [tracker.train_step]
-
-    # record summary
-    if global_step % 1000 == 0:  # conv, lstm, loss => all summary
-        op_to_run += [tracker.summary['all']]
-    elif global_step % 100 == 0:  # lstm, loss
-        op_to_run += [tracker.summary['lstm'], tracker.summary['loss']]
-    elif global_step % 10 == 0:  # loss
-        op_to_run += [tracker.summary['loss']]
-
-    # get pred bbox for display
-    if display:
-        op_to_run += [tracker.pred]
-
-    # run ops
-    op_output = sess.run([op_to_run], feed_dict=feed_dict)
-
-    # display
-    if display:
-        track_pred = op_to_run[-1][0]
-        track_img = input_batch[0]
-        label_box = [train_feeder.revert_label_type(l) for l in label_batch[0]]
-        pred_box = [train_feeder.revert_label_type(p) for p in track_pred]
-
-        display_img_pred_label(track_img, label_box, pred_box)
-        op_to_run = op_to_run[:-1] # get rid of pred
-
-    # write summary
-    cur_summary = op_output[1:]
-    if cur_summary:
-        for s in cur_summary:
-            summary_writer.add_summary(s, global_step=global_step)
-
-    # save new ckpt (over-write old one)
-    if global_step % 500 == 0:
-        ckpt_path = os.path.join(args.model_dir, args.model_name)
-        saver.save(sess, ckpt_path, global_step=global_step)
-
-        if args.run_val:
-            val_model.record_val(ckpt_path)
-
-def run_train_step_tfdataset(tf_img):
-    raise NotImplementedError
-    pass
-
-run_train_step = run_train_step_tfdataset if args.tf_dataset else run_train_step_feeddict
-
-# start training
-start_time = time.time()
 try:
-    if args.bbox_encoding in ['mask', 'mesh']:  # use mask => varying input img size
-    # => training strategy: initial unrolls=2, then unrolls*=2 till unroll=32; batch=1 to avoid searching for same-size img
-        num_unrolls = 2
-        batch_size = 1
-        for input_batch, label_batch in train_feeder.iterate_batch(batch_size):
-            run_train_step(input_batch, label_batch)
-            global_step += 1
-
-    else:  # use crop => fixed input img size
-    # => training strategy: initial unrolls=2, batch=64; then, unrolls*=2, batch/=2, till unroll=32 (batch=4)
-        num_unrolls = 2
-        batch_size = 64
-        for ep_cnt in range(args.epoch):
-            batch_cnt = 0
-            for input_batch, label_batch in train_feeder.iterate_batch(batch_size):
-                feed_dict = {tracker.tf_img: input_batch,
-                            tracker.tf_label: label_batch}
-                sess.run([tracker.train_step], feed_dict=feed_dict)
-
-except:  # save on unexpected termination
-    if not DEBUG:
-        print('saving...')
-        checkpoint_file = os.path.join(args.log_dir, 'checkpoints', 'model.ckpt')
-        saver.save(sess, checkpoint_file, global_step=global_step)
+    re3_trainer = trainer.Re3_Trainer(args.model_name, args.root_dir, args)
+    re3_trainer.train()
+except:
+    log_file.close()
     raise

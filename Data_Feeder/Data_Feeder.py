@@ -699,7 +699,7 @@ class Imagenet_VID_Feeder(Feeder):
     original reference format: [[package_id, video_id, frame_id, track_id, class_id, occludded, xmin, ymin, xmax, ymax]...]
     note: xy-min/max are in window coord => x indexing col & y indexing row 
     '''
-    def __init__(self, data_ref_path, class_num, class_name=None, use_onehot=True, mode='VOT', num_unrolls=2,
+    def __init__(self, data_ref_path, class_num, class_name=None, use_onehot=True, mode='VOT', num_unrolls=None,
                  img_lib='cv2', config={}):
         super(Imagenet_VID_Feeder, self).__init__(data_ref_path, class_num, class_name, use_onehot, config)
 
@@ -710,7 +710,7 @@ class Imagenet_VID_Feeder(Feeder):
         else:
             self.imread = lambda path: self.img_lib.imread(path)
         
-        assert self.mode in ['VOT', 'MOT']
+        assert mode in ['VOT', 'MOT']
         self.mode = mode  # MOT possibly contains multiple tracks in a frame
 
         assert config['label_type'] in ['corner', 'center']
@@ -747,8 +747,9 @@ class Imagenet_VID_Feeder(Feeder):
         self.data_dir = '/'.join(self.data_ref_path.strip('/').split('/')[:-1]) \
                         if 'data_dir' not in config else config['data_dir']  # keys default to be directly under data dir
 
-        # finally, construct self.data_refs & record self.num_unrolls=num_unrolls
-        self.reset_num_unrolls(num_unrolls)
+        # finally, construct self.data_refs & record self.num_unrolls=num_unrolls, if provided
+        if num_unrolls:
+            self.reset_num_unrolls(num_unrolls)
 
     def _load_data_ref(self):
         # TODO:should use pandas
@@ -777,6 +778,9 @@ class Imagenet_VID_Feeder(Feeder):
         return refs, data_ref
     
     def reset_num_unrolls(self, num_unrolls):
+        '''
+        reconstruct feeder according to specified num_unrolls
+        '''
         self.num_unrolls = num_unrolls
         self._original_refs, self.data_ref = self._load_data_ref()
 
@@ -801,7 +805,7 @@ class Imagenet_VID_Feeder(Feeder):
         mask[ymin:ymax, xmin:xmax] = 1
         return mask[...,np.newaxis]
 
-    def _encode_bbox_mask(self, img, prev_box, cur_box)::
+    def _encode_bbox_mask(self, img, prev_box, cur_box):
         img_shape = np.array(img.shape)
         mask = self._get_mask(img_shape, prev_box)
         img = np.concatenate([img, mask], axis=-1)
@@ -861,7 +865,7 @@ class Imagenet_VID_Feeder(Feeder):
         xc, yc = int((xyxy[0] + xyxy[2]) / 2), int((xyxy[1] + xyxy[3]) / 2)  # xmin, ymin, xmax, ymax
         h = xyxy[3] - xyxy[1]
         w = xyxy[2] - xyxy[0]
-        return np.array(xc, yc, w, h)
+        return np.array([xc, yc, w, h])
 
     @staticmethod
     def _xywh_to_xyxy(xywh):

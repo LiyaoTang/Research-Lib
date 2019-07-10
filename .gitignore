@@ -8,5 +8,10 @@
 Data/**
 Data
 
+# training intermidiate result
+**/Log
+**/Model
+**/Summary
+
 # IDE
 .vscode

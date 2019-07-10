@@ -1,0 +1,19 @@
+# basic scientific lib
+numpy
+pandas
+scikit-learn
+
+# images
+opencv-python
+matplotlib
+scikit-image
+
+# mem stuff
+psutil
+dill
+
+# notebook
+jupyter
+
+# UI
+PyQt5

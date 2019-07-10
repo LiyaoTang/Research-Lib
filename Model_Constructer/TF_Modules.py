@@ -9,7 +9,7 @@ import numpy as np
 import tensorflow as tf
 from .TF_Ops import *
 
-def alexnet_conv_layers(input, auxilary_input=None, prelu_initializer=tf.constant_initializer(0.25), use_spp=False):
+def alexnet_conv_layers(input, auxilary_input=None, prelu_initializer=tf.constant_initializer(0.25), fuse_type='flat'):
     '''
     input: images, expected to be of [batch, width, height, channel]
     '''
@@ -17,9 +17,10 @@ def alexnet_conv_layers(input, auxilary_input=None, prelu_initializer=tf.constan
         feat_map = tf.transpose(feat_map, perm=[0, 3, 1, 2])
         feat_map = remove_axis(feat_map, [2, 3])
         return feat_map
+    assert fuse_type in ['flat', 'spp', 'resize']
 
     with tf.variable_scope('conv1'):
-        if auxilary_input:
+        if auxilary_input is not None:
             conv1 = conv_layer(input, 96, filter_size=11, stride=4, padding='VALID', activation=None)
             conv1 = conv1 + auxilary_input  # join before activation
             conv1 = tf.nn.relu(conv1)
@@ -31,8 +32,7 @@ def alexnet_conv_layers(input, auxilary_input=None, prelu_initializer=tf.constan
     with tf.variable_scope('conv1_skip'):
         conv1_skip = conv_layer(lrn1, 16, filter_size=1, activation=None)
         conv1_skip = prelu(conv1_skip, initializer=prelu_initializer)
-        # each img flatten into 1-D
-        if not use_spp:
+        if fuse_type == 'flat':  # each img flatten into 1-D
             conv1_skip_flat = flatten(conv1_skip)
 
     with tf.variable_scope('conv2'):
@@ -44,7 +44,7 @@ def alexnet_conv_layers(input, auxilary_input=None, prelu_initializer=tf.constan
     with tf.variable_scope('conv2_skip'):
         conv2_skip = conv_layer(lrn2, 32, filter_size=1, activation=None)
         conv2_skip = prelu(conv2_skip, initializer=prelu_initializer)
-        if not use_spp:
+        if fuse_type == 'flat':
             conv2_skip_flat = flatten(conv2_skip)
 
     with tf.variable_scope('conv3'):
@@ -56,24 +56,29 @@ def alexnet_conv_layers(input, auxilary_input=None, prelu_initializer=tf.constan
     with tf.variable_scope('conv5'):
         conv5 = conv_layer(conv4, 256, filter_size=3, num_groups=2, padding='SAME')
         pool5 = tf.nn.max_pool(conv5, ksize=[1, 3, 3, 1], strides=[1, 2, 2, 1], padding='VALID', name='pool5')
-        if not use_spp:
+        if fuse_type == 'flat':
             pool5_flat = flatten(pool5)
 
     with tf.variable_scope('conv5_skip'):
         conv5_skip = conv_layer(conv5, 64, filter_size=1, activation=None)
         conv5_skip = prelu(conv5_skip)
-        if not use_spp:
+        if fuse_type == 'flat':
             conv5_skip_flat = flatten(conv5_skip)
 
     with tf.variable_scope('big_concat'):
         # concat all skip layers
-        if use_spp:
+        if fuse_type == 'flat':
+            feat = [conv1_skip_flat, conv2_skip_flat, conv5_skip_flat, pool5_flat]
+        elif fuse_type == 'spp':
             feat = [conv1_skip, conv2_skip, conv5_skip, pool5]
             spp_bin_list = [[27], [13], [13], [6]]  # pool size on pixel = [[4x2, 4x2, 4x2, 5x3]]
-            for bins, i in zip(spp_bin_list, feat):  # a spp for each layer
+            for i, bins in enumerate(spp_bin_list):  # a spp for each layer
                 feat[i] = spatial_pyramid_pooling(feat[i], bins)
-        else:
-            feat = [conv1_skip_flat, conv2_skip_flat, conv5_skip_flat, pool5_flat]
+        else:  # resize as image
+            feat = [conv1_skip, conv2_skip, conv5_skip, pool5]
+            size_list = [27, 13, 13, 6]
+            for i, sz in enumerate(size_list):
+                feat[i] = flatten(tf.image.resize(feat[i], (sz, sz)))
         feat_concat = tf.concat(feat, 1)
 
     return feat_concat
@@ -117,7 +122,7 @@ def re3_lstm_tracker(input, num_unrolls, prev_state, lstm_size=512, rnn_type='ls
 
     # final dense layer.
     with tf.variable_scope('fc_output'):
-        fc_output = dense_layer(flatten_out, 4, activation=None)  # [batch x time, 4]
+        fc_output = dense_layer(flatten_out, 4, activation=None, name='fc')  # [batch x time, 4]
         fc_output = tf.reshape(fc_output, [-1, num_unrolls, 4])  #  [batch, time, 4]
 
     return fc_output, (state1, state2)

@@ -500,7 +500,7 @@ class Parallel_Feeder(object):
     construct a parallel py-process to load data: enable loading-training pipeline
     warning: should NOT modify passed in feeder afterwards
     '''
-    def __init__(self, feeder, batch_size=1, buffer_size=5, worker_num=1):
+    def __init__(self, feeder, buffer_size=5, worker_num=1):
         super(Parallel_Feeder, self).__init__()
 
         assert isinstance(feeder, Feeder)  # a data feeder with mapping: key -> input-label
@@ -508,14 +508,14 @@ class Parallel_Feeder(object):
         self.__data_ref = feeder.data_ref  # mapping to load each input-label pair
 
         self.__config = {'alive': True,
-                         'batch_size': batch_size,
+                         'batch_size': None,
                          'buffer_size': buffer_size,
                          'worker_num': worker_num,
                          'wrapable': False}
 
         self.mp = __import__('multiprocessing', fromlist=[''])
         self.__config_lock = self.mp.Lock()  # lock for state reading/setting
-        self.__buffer = self.mp.Queue(maxisize=buffer_size)  # buffer for filling data
+        self.__buffer = self.mp.Queue(maxsize=buffer_size)  # buffer for filling data
         self.__worker = []
 
     def _create_worker(self):
@@ -538,14 +538,17 @@ class Parallel_Feeder(object):
         self.__buffer.close()
         self.__config_lock = None
             
-    def refresh(self, config=None):
+    def refresh(self, feeder=None, config=None):
         self.shutdown()
         if config:
             for k in config:
                 self.__config[k] = config[k]
+        if feeder:
+            self.__feeder = feeder
+            self.__data_ref = feeder.data_ref
         # new lock, new queue
         self.__config_lock = self.mp.Lock()
-        self.__buffer = self.mp.Queue(maxisize=self.__config['buffer_size'])
+        self.__buffer = self.mp.Queue(maxsize=self.__config['buffer_size'])
     
     def __del__(self):
         self.shutdown()
@@ -572,27 +575,32 @@ class Parallel_Feeder(object):
         # random.choices(data_keys, weights=[...]) for random sample
         while True:
             config = self.__read_config()
-            cur_data = []
+            input_batch = []
+            label_batch = []
             for _ in range(config['batch_size']):
                 try:
-                    cur_data.append(next(data_generator))
+                    cur_input, cur_label = next(data_generator)
                 except StopIteration:
                     # renew generator
                     np.random.shuffle(data_ref)
                     data_generator = (self.__feeder._get_input_label_pair(r) for r in data_ref)
                     
-                    if config['warpable']: # if wrap around
-                        cur_data.append(next(data_generator))
+                    if config['wrapable']: # if wrap around
+                        cur_input, cur_label = next(data_generator)
                         pass
                     else:  # not to wrap: complete the last batch & stop here
-                        cnt = config['batch_size'] - len(cur_data)
+                        cnt = config['batch_size'] - len(input_batch)
                         for _ in range(cnt):
-                             cur_data.append(next(data_generator))
+                            cur_input, cur_label = next(data_generator)
+                            input_batch.append(cur_input)
+                            label_batch.append(cur_label)
                         config['alive'] = False
                         break
-            
-            assert len(cur_data) == config['batch_size']  # enqueue, potentially blocking
-            self.__buffer.put(cur_data)
+                input_batch.append(cur_input)
+                label_batch.append(cur_label)
+
+            assert len(input_batch) == config['batch_size']  # enqueue, potentially blocking
+            self.__buffer.put((input_batch, label_batch))
             
             if not config['alive']:
                 break
@@ -608,12 +616,13 @@ class Parallel_Feeder(object):
         while True:
             cnt += 1
             try:
-                yield self.__buffer.get(timeout=timeout)  # potentially blocking
+                batch = self.__buffer.get(timeout=timeout)  # potentially blocking
             except self.mp.TimeoutError:
                 print('------------>')
                 print('timeout when trying to read the %dth batch' % cnt)
                 print('<------------')
                 raise
+            yield batch
             if cnt >= len(self.__data_ref):  # finished
                 break
 
@@ -625,9 +634,10 @@ class Parallel_Feeder(object):
         self._create_worker()
         while True:
             try:
-                yield self.__buffer.get(timeout=timeout)  # potentially blocking
+                data = self.__buffer.get(timeout=timeout)  # potentially blocking
             except self.mp.TimeoutError:
                 print('------------>')
                 print('timeout when trying to read batch')
                 print('<------------')
                 raise
+            yield data
