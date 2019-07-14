@@ -46,12 +46,12 @@ parser.add_argument('--use_inference_prob', default=-1, type=float, dest='use_in
 parser.add_argument('--max_step', default=1e6, type=float, dest='max_step')
 parser.add_argument('--rand_seed', default=None, type=int, dest='rand_seed')
 
+parser.add_argument('--batch_size', default=64, type=int, dest='num_unrolls')
 parser.add_argument('--run_val', default=True, type=str2bool, dest='run_val')
 parser.add_argument('--worker_num', default=1, type=int, dest='worker_num')
 parser.add_argument('--buffer_size', default=5, type=int, dest='buffer_size')
 parser.add_argument('--use_parallel', default=True, type=str2bool, dest='use_parallel')
 parser.add_argument('--use_tfdataset', default=False, type=str2bool, dest='use_tfdataset')
-
 
 parser.add_argument('--model_name', type=str, dest='model_name')
 parser.add_argument('--root_dir', default='../../', type=str, dest='root_dir')
@@ -89,7 +89,6 @@ args.model_dir = os.path.join(args.model_dir, args.model_name)
 os.makedirs(args.model_dir, exist_ok=True)
 os.makedirs(args.summary_dir, exist_ok=True)
 
-
 # change std out if log dir originally given
 if args.log_dir:
     os.makedirs(args.log_dir, exist_ok=True)
@@ -97,7 +96,6 @@ if args.log_dir:
     log_file = open(log_file_path, 'w')
     sys.stdout = log_file
     print(args.model_name)
-    print(args.use_tfdataset)
 else:
     log_file = ''
 

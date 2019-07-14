@@ -389,7 +389,7 @@ class Re3_Tracker(object):
     replicate & extend the re3 tracking model from paper:
     Re3 : Real-Time Recurrent Regression Networks for Visual Tracking of Generic Objects (https://arxiv.org/abs/1705.06368)
     '''
-    def __init__(self, tf_input, tf_label, prev_state, lstm_size=512, mode='train', config={}):
+    def __init__(self, tf_input, tf_label, prev_state, feeder, lstm_size=512, mode='train', config={}):
         '''
         tf_input: [batch, time, img_h, img_w, img_channel] for bbox_encoding in ['mask', 'mesh'] => cur img + mask
                   [batch, time, 2, img_h, img_w, img_channel] for bbox_encoding in ['corner', 'center'] => one cur crop, one prev
@@ -401,6 +401,9 @@ class Re3_Tracker(object):
 
         self.lstm_size = lstm_size
         
+        self.encode_bbox = feeder.encode_bbox_to_img
+        self.decode_bbox = feeder.decode_bbox
+
         self.config = config  # data & encoding associated configuration
         assert config['attention'] in ['hard', 'soft', 'soft_fuse']
         assert config['bbox_encoding'] in ['mask', 'mesh', 'crop']  # mesh/mask: no crop; crop: crop
@@ -528,14 +531,17 @@ class Re3_Tracker(object):
             optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
             with tf.device('/cpu:0'):  # create cnt on cpu
                 global_step = tf.train.get_or_create_global_step()
-            self.train_all_step = optimizer.minimize(self.loss, global_step=global_step, var_list=var_list,
+            self.train_step = optimizer.minimize(self.loss, global_step=global_step, var_list=var_list,
                                                      colocate_gradients_with_ops=True)
-            var_list = [v for v in var_list if 'preprocess' in v.name or 'conv1' in v.name]
-            print(var_list)
-            self.stablize_step = optimizer.minimize(self.loss, global_step=global_step, var_list=var_list,
-                                                    colocate_gradients_with_ops=True)
+            varlist_dict = {
+                'preprocess': [v for v in var_list if 'preprocess' in v.name],
+                'conv1': [v for v in var_list if 'preprocess' in v.name or 'conv1' in v.name],
+            }
+            self.stablize_step = {}
+            for k, v_list in varlist_dict:
+                self.stablize_step[k] = optimizer.minimize(self.loss, global_step=global_step, var_list=v_list)
 
-    def inference(self, track, bboxes, sess, encode_bbox_func, decode_bbox_func, display_func=None):
+    def inference(self, track, bboxes, sess, display_func=None):
         '''
         given a single track, output inferenced track result
         '''
@@ -545,7 +551,7 @@ class Re3_Tracker(object):
         for img in track:
             if display_func:
                 display_func(img, out_bbox[-1])
-            cur_input = encode_bbox_func(img, out_bbox[-1])  # encode the prev bbox onto current input (cropping, masking, etc.)
+            cur_input = self.encode_bbox(img, out_bbox[-1])  # encode the prev bbox onto current input (cropping, masking, etc.)
             if self.config['bbox_encoding'] == 'crop' and prev_input is None:
                 cur_input = (prev_input, cur_input)
             
@@ -556,7 +562,7 @@ class Re3_Tracker(object):
             pred, prev_state = sess.run([self.pred, self.lstm_state], feed_dict=feed_dict)
             prev_state = tuple(prev_state)
 
-            out_bbox.append(decode_bbox_func(out_bbox[-1], pred))  # record bbox under whole img coord
+            out_bbox.append(self.decode_bbox(out_bbox[-1], pred))  # record bbox under whole img coord
             if self.config['bbox_encoding'] == 'crop':
                 prev_input = cur_input
         return out_bbox

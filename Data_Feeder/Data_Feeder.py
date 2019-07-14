@@ -13,6 +13,7 @@ import numpy as np
 import pandas as pd
 import tensorflow as tf
 from .base import TFRecord_Feeder, TF_CSV_Feeder, TF_TXT_Feeder, Gen_Feeder, Feeder
+from collections import defaultdict
 
 class Img_from_Record_Feeder(TFRecord_Feeder):
     '''
@@ -699,9 +700,11 @@ class Imagenet_VID_Feeder(Feeder):
     original reference format: [[package_id, video_id, frame_id, track_id, class_id, occludded, xmin, ymin, xmax, ymax]...]
     note: xy-min/max are in window coord => x indexing col & y indexing row 
     '''
-    def __init__(self, data_ref_path, class_num, class_name=None, use_onehot=True, mode='VOT', num_unrolls=None,
-                 img_lib='cv2', config={}):
+    def __init__(self, data_ref_path, class_num, class_name=None, use_onehot=True, mode='VOT',
+                 num_unrolls=None, batch_size=None, img_lib='cv2', config={}):
         super(Imagenet_VID_Feeder, self).__init__(data_ref_path, class_num, class_name, use_onehot, config)
+        self._ref_dict = None
+        self._original_refs = None
 
         assert img_lib in ['cv2', 'skimage']
         self.img_lib = __import__(img_lib, fromlist=[''])
@@ -725,15 +728,15 @@ class Imagenet_VID_Feeder(Feeder):
         if config['bbox_encoding'] == 'crop':
             self._encode_bbox = self._encode_bbox_crop  # encode bbox to both input img & label
             self.decode_bbox = self._decode_bbox_crop  # decode pred to bbox on full image
-            self._get_input_label_pair = self._get_input_label_pair_crop # feed pair of crop
+            self._get_input_label_example = self._get_input_label_example_crop # feed pair of crop
         elif config['bbox_encoding'] == 'mesh':
             self._encode_bbox = self._encode_bbox_mesh_mask
             self.decode_bbox = self._decode_bbox_mask
-            self._get_input_label_pair = self._get_input_label_pair_mask # feed full img with mask
+            self._get_input_label_example = self._get_input_label_example_mask # feed full img with mask
         else:  # mask encodeing
             self._encode_bbox = self._encode_bbox_mask
             self.decode_bbox = self._decode_bbox_mask
-            self._get_input_label_pair = self._get_input_label_pair_mask
+            self._get_input_label_example = self._get_input_label_example_mask
 
         assert config['use_inference_prob'] <= 1  # set to negative to disable
 
@@ -747,42 +750,59 @@ class Imagenet_VID_Feeder(Feeder):
         self.data_dir = '/'.join(self.data_ref_path.strip('/').split('/')[:-1]) \
                         if 'data_dir' not in config else config['data_dir']  # keys default to be directly under data dir
 
-        # finally, construct self.data_refs & record self.num_unrolls=num_unrolls, if provided
-        if num_unrolls:
-            self.reset_num_unrolls(num_unrolls)
+        # finally, construct self.data_refs & record num_unrolls/batch_size, if provided
+        self.num_unrolls = num_unrolls
+        self.batch_size = batch_size
+        if num_unrolls and batch_size:
+            self.reset(num_unrolls, batch_size)
 
     def _load_data_ref(self):
         # TODO:should use pandas
-        refs = np.load(self.data_ref_path)
-        # restructure according to mode
-        data_ref = []
-        if self.mode == 'VOT':
+        if self._original_refs is None:  # load the prepared original refs
+            self._ref_dict = None
+            refs = np.load(self.data_ref_path)
             # sort first by package, then video snippet, then track, then frame
             idx = np.lexsort((refs[:, 2], refs[:, 3], refs[:, 1], refs[:, 0]))
             refs = refs[idx]
-            
-            # construct ref to track with limited unroll: [track...], where track = [original ref...]
-            for idx in range(len(refs) - self.num_unrolls):
-                start = list(refs[idx][[0, 1, 3]])
-                end = list(refs[idx + self.num_unrolls - 1][[0, 1, 3]])
+            self._original_refs = refs
+
+        if self._ref_dict is None:  # construct ref to track with limited unroll
+            ref_dict = defaultdict(lambda: [])
+            batch = []
+            cur_vid = None
+            for idx in range(len(self._original_refs) - self.num_unrolls):
+                start = list(self._original_refs[idx][[0, 1, 3]])
+                end = list(self._original_refs[idx + self.num_unrolls - 1][[0, 1, 3]])
+                size = tuple(self._original_refs[idx][[-2, -1]])
                 if start == end:  # still in the same track
-                    # data_ref.append(refs[idx:idx + self.num_unrolls])
-                    data_ref.append(idx)
-        else: # 'MOT'
-            # sort first by package, then video snippet, then frame
-            idx = np.lexsort((refs[:, 2], refs[:, 1], refs[:, 0]))
-            refs = refs[idx]
-            raise NotImplementedError
-        
+                    ref_dict[size].append(idx)  # split into groups based on img size
+            self._ref_dict = dict(ref_dict)        
+
+        # construct data_ref = [batch, ...], each batch = [track ref, ...] (randomized)
+        data_ref = []
+        for ref_list in self._ref_dict.values():
+            np.random.shuffle(ref_list)
+            batch_num = int(np.ceil(len(ref_list) / self.batch_size))  # at least one batch 
+            for _ in range(batch_num):
+                start = batch_num * self.batch_size
+                cur_batch = ref_list[start:start + self.batch_size]
+                while len(cur_batch) < self.batch_size:  # fill the last batch with wrapping over
+                    cur_batch += ref_list[0:self.batch_size - len(cur_batch)]
+                data_ref.append(cur_batch)
         np.random.shuffle(data_ref)
-        return refs, data_ref
+        self.data_ref = data_ref
     
-    def reset_num_unrolls(self, num_unrolls):
+    def reset(self, num_unrolls=None, batch_size=None):
         '''
         reconstruct feeder according to specified num_unrolls
         '''
-        self.num_unrolls = num_unrolls
-        self._original_refs, self.data_ref = self._load_data_ref()
+        if self.num_unrolls != num_unrolls and num_unrolls is not None:
+            self.num_unrolls = num_unrolls
+            self.ref_dict = None  # reconstruct ref to track based on new num_unrolls
+        if self.batch_size != batch_size and batch_size is not None:
+            self.batch_size = batch_size
+        assert self.num_unrolls is not None and self.batch_size is not None
+        self._load_data_ref()
 
     def _get_train_img(self, img_ref):
         # ILSVRC2015/Data       /VID/[train, val, test]/[package]/[snippet ID]/[frame ID].JPEG
@@ -856,8 +876,8 @@ class Imagenet_VID_Feeder(Feeder):
         return np.clip(box, 0, np.array(img.shape)[[1, 0, 1, 0]]).astype(int)
 
     @staticmethod
-    def _clip_bbox_from_ref(ref, image_shape):
-        xmin, ymin, xmax, ymax = np.clip(ref[-4:], 0, image_shape[[1, 0, 1, 0]])
+    def _clip_bbox_from_ref(ref, image_shape):  # original ref
+        xmin, ymin, xmax, ymax = np.clip(ref[-6:-2], 0, image_shape[[1, 0, 1, 0]])
         return xmin, ymin, xmax, ymax
 
     @staticmethod
@@ -882,9 +902,19 @@ class Imagenet_VID_Feeder(Feeder):
         xyxy_box = self._clip_bbox_from_ref(ref, image_shape)
         return xyxy_box, xyxy_box
 
-    def _get_input_label_pair_crop(self, ref):
+    def _get_input_label_pair(self, ref):
+        # generate a pair of batch
+        input_batch = []
+        label_batch = []
+        for track_ref in ref:  # for ref in current batch
+            cur_input, cur_label = self._get_input_label_example(track_ref)
+            input_batch.append(cur_input)
+            label_batch.append(cur_label)
+        return input_batch, label_batch
+
+    def _get_input_label_example_crop(self, track_ref):
         # generate pair of images of time [t, t-1] as net input at time t
-        ref = self._original_refs[ref:ref + self.num_unrolls]  # get original_ref for a track
+        org_ref = self._original_refs[track_ref:track_ref + self.num_unrolls]  # get original_ref for a track
         if np.random.rand() < self.config['use_inference_prob']:
             return self._get_input_label_from_inference(ref)
 
@@ -892,7 +922,7 @@ class Imagenet_VID_Feeder(Feeder):
         label_seq = []
         prev_box = None
         prev_input = None
-        for r in ref:  # for original_ref in a track/video
+        for r in org_ref:  # for original_ref in a track/video
             cur_img = self._get_img(r)
             cur_box = self._clip_bbox_from_ref(r, np.array(cur_img.shape))  # xyxy box
 
@@ -909,16 +939,16 @@ class Imagenet_VID_Feeder(Feeder):
             prev_input = cur_input
         return input_seq, label_seq
 
-    def _get_input_label_pair_mask(self, ref):
+    def _get_input_label_example_mask(self, track_ref):
         # generate mask based on label box of time t-1
-        ref = self._original_refs[ref:ref + self.num_unrolls]  # get original_ref for a track
+        org_ref = self._original_refs[track_ref:track_ref + self.num_unrolls]  # get original_ref for a track
         if np.random.rand() < self.config['use_inference_prob']:
             return self._get_input_label_from_inference(ref)
 
         input_seq = []
         label_seq = []
         prev_box = None
-        for r in ref:  # for original_ref in a track/video
+        for r in org_ref:  # for original_ref in a track/video
             cur_img = self._get_img(r)
             cur_box = self._clip_bbox_from_ref(r, np.array(cur_img.shape))  # xyxy box
 
@@ -944,7 +974,7 @@ class Imagenet_VID_Feeder(Feeder):
             img_seq.append(cur_img)
             box_seq.append(cur_box)
 
-        pred_seq = self.config['model'].inference(img_seq, box_seq, self.config['sess'], self.encode_bbox_to_img, self.decode_bbox)
+        pred_seq = self.config['model'].inference(img_seq, box_seq, self.config['sess'])
 
         input_seq = []
         label_seq = []
@@ -965,3 +995,27 @@ class Imagenet_VID_Feeder(Feeder):
                 prev_input = cur_input
 
         return input_seq, label_seq
+
+    def iterate_track(self):
+        '''
+        iterate over all tracks in dataset as (input_seq, label_seq)
+        Warning: should not be used if feeder is currently wrapped by parallel feeder (as feeder states modified)
+        '''
+        _use_inference_prob = self.config['use_inference_prob']
+        _num_unrolls = self.num_unrolls
+
+        self.config['use_inference_prob'] = -1
+        idx = 0
+        track_input, track_label = [], []
+        while idx < len(self._original_refs):
+            # collect cur track
+            start_idx = idx
+            vid = list(self._original_refs[idx][[0, 1, 3]])
+            while idx < len(self._original_refs) and vid == list(self._original_refs[idx][[0, 1, 3]]):
+                idx += 1
+            self.num_unrolls = idx - start_idx
+            yield self._get_input_label_example(start_idx)
+
+        self.config['use_inference_prob'] = _use_inference_prob
+        self.num_unrolls = _num_unrolls
+

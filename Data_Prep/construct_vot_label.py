@@ -20,6 +20,7 @@ import numpy as np
 import xml.etree.ElementTree as ET
 
 DEBUG = False
+SAVE = True
 
 class Size_Info(object):
     def __init__(self):
@@ -127,10 +128,11 @@ def main(label_type):
                 xmin, ymin = int(bbox.find('xmin').text), int(bbox.find('ymin').text)
                 xmax, ymax = int(bbox.find('xmax').text), int(bbox.find('ymax').text)
                 bbox = [package_id, video_id, frame_id, track_id,
-                        class_id, occl, xmin, ymin, xmax, ymax]
+                        class_id, occl, xmin, ymin, xmax, ymax, cur_size[0], cur_size[1]]
 
                 bbox_size.collect([xmax - xmin, ymax - ymin])  # w,h
-                # bboxes.append(bbox)
+                if SAVE:
+                    bboxes.append(bbox)
 
                 if DEBUG:
                     if track_id not in track_color:
@@ -147,13 +149,14 @@ def main(label_type):
     img_size.print()
     print('bbox size:')
     bbox_size.print()
-    return 
-    # reorder by video_id, then track_id, then frame_id => all labels for a single track are next to each other
-    # (matters only if a single image could have multiple tracks)
-    bboxes = np.array(bboxes)
-    order = np.lexsort((bboxes[:,2], bboxes[:,3], bboxes[:,1]))
-    bboxes = bboxes[order,:]
-    np.save('labels/' + label_type + '_label.npy', bboxes)
+
+    if SAVE:
+        # reorder by video_id, then track_id, then frame_id => all labels for a single track are next to each other
+        # (matters only if a single image could have multiple tracks)
+        bboxes = np.array(bboxes)
+        order = np.lexsort((bboxes[:,2], bboxes[:,3], bboxes[:,1]))
+        bboxes = bboxes[order,:]
+        np.save(os.path.join(dataset_path, label_type + '_label.npy'), bboxes)
 
 if __name__ == '__main__':
     main('train')

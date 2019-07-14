@@ -29,6 +29,8 @@ use_parallel="True"
 use_tfdataset="False"
 display="False"
 
+restore_dir=""
+
 python re3.py --lrn_rate $lrn_rate \
               --attention $attention \
               --fuse_type $fuse_type \
@@ -43,7 +45,7 @@ python re3.py --lrn_rate $lrn_rate \
               --use_tfdataset $use_tfdataset \
               --run_val $run_val \
               --display $display \
-              --restore_dir $restore_dir \
+              --restore_dir "$restore_dir"
             # --model_name "re3-mask_lstm512_hard_2019_07_09_00_01_00"
                 # --log ""
                 #  &

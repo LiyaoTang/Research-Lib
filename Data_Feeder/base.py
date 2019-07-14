@@ -435,59 +435,31 @@ class Feeder(object):
     def _get_input_label_pair(self, ref):
         raise NotImplementedError
 
-    def decode_label(self, input, label):
-        '''
-        decode the label with potential usage of input info
-        '''
-        raise NotImplementedError
-
     def iterate_data(self):
         '''
         iterate through the dataset for once; one example a time
         '''
         for ref in self.data_ref:
-            return self._get_input_label_pair(ref)
-    
-    def iterate_batch(self, batch_size):
-        '''
-        iterate through the dataset for once; a batch a time
-        '''
-        input_batch = []
-        label_batch = []
-        cnt = 0
-        for ref in self.data_ref:
-            cur_input, cur_label = self._get_input_label_pair(ref)
-            input_batch.append(cur_input)
-            label_batch.append(cur_label)
-            cnt += 1
-            if cnt == batch_size:
-                yield input_batch, label_batch
-                input_batch = []
-                label_batch = []
-                cnt = 0
-
-        # compelet the last batch
-        if cnt < batch_size and cnt != 0:
-            np.random.shuffle(self.data_ref)
-            for i in range(batch_size - cnt):
-                cur_input, cur_label = self._get_input_label_pair(self.data_ref[i])
-                input_batch.append(cur_input)
-                label_batch.append(cur_label)
-            yield input_batch, label_batch
+            yield self._get_input_label_pair(ref)
 
     def iterate_forever(self, batch_size=None):
-        if batch_size:
-            while True:
-                yield from self.iterate_batch(batch_size)
-        else:
-            data_gen = self.iterate_data()
-            while True:
-                try:
-                    yield next(data_gen)
-                except StopIteration:
-                    np.random.shuffle(self.data_ref)
-                    data_gen = self.iterate_data()
-                    pass
+        '''
+        iterate data/batch as infinite generator
+        '''
+        data_gen = self.iterate_data()
+        while True:
+            try:
+                yield next(data_gen)
+            except StopIteration:
+                self.reset()
+                data_gen = self.iterate_data()
+                pass
+
+    def reset(self):
+        '''
+        reset & randomize the feeder
+        '''
+        np.random.shuffle(self.data_ref)
 
     def iterate_with_metadata(self):
         '''
@@ -508,7 +480,6 @@ class Parallel_Feeder(object):
         self.__data_ref = feeder.data_ref  # mapping to load each input-label pair
 
         self.__config = {'alive': True,
-                         'batch_size': None,
                          'buffer_size': buffer_size,
                          'worker_num': worker_num,
                          'wrapable': False}
@@ -575,58 +546,46 @@ class Parallel_Feeder(object):
         # random.choices(data_keys, weights=[...]) for random sample
         while True:
             config = self.__read_config()
-            input_batch = []
-            label_batch = []
-            for _ in range(config['batch_size']):
-                try:
+            try:
+                cur_input, cur_label = next(data_generator)
+            except StopIteration:
+                # renew generator
+                np.random.shuffle(data_ref)
+                data_generator = (self.__feeder._get_input_label_pair(r) for r in data_ref)
+                
+                if config['wrapable']: # if wrap around
                     cur_input, cur_label = next(data_generator)
-                except StopIteration:
-                    # renew generator
-                    np.random.shuffle(data_ref)
-                    data_generator = (self.__feeder._get_input_label_pair(r) for r in data_ref)
-                    
-                    if config['wrapable']: # if wrap around
-                        cur_input, cur_label = next(data_generator)
-                        pass
-                    else:  # not to wrap: complete the last batch & stop here
-                        cnt = config['batch_size'] - len(input_batch)
-                        for _ in range(cnt):
-                            cur_input, cur_label = next(data_generator)
-                            input_batch.append(cur_input)
-                            label_batch.append(cur_label)
-                        config['alive'] = False
-                        break
-                input_batch.append(cur_input)
-                label_batch.append(cur_label)
-
-            assert len(input_batch) == config['batch_size']  # enqueue, potentially blocking
-            self.__buffer.put((input_batch, label_batch))
+                    pass
+                else:  # not to wrap: stop here
+                    config['alive'] = False
+                    break
+            self.__buffer.put((cur_input, cur_label))
             
             if not config['alive']:
                 break
 
-    def iterate_batch(self, batch_size, timeout=5):
+    def iterate_data(self, timeout=10):
         '''
         entry for main process: iterate through dataset for once; one batch a time
         '''
         self.__config['wrapable'] = False
-        self.__config['batch_size'] = batch_size
         self._create_worker() # workers start runnning
         cnt = 0
         while True:
             cnt += 1
             try:
-                batch = self.__buffer.get(timeout=timeout)  # potentially blocking
-            except self.mp.TimeoutError:
+                data = self.__buffer.get(timeout=timeout)  # potentially blocking
+            except:
                 print('------------>')
-                print('timeout when trying to read the %dth batch' % cnt)
+                print('timeout when trying to read the %dth data' % cnt)
+                print('current data:\n', data)
                 print('<------------')
                 raise
-            yield batch
+            yield data
             if cnt >= len(self.__data_ref):  # finished
                 break
 
-    def iterate_forever(self, timeout=5):
+    def iterate_forever(self, timeout=10):
         '''
         entry for main process: create running-forever workers and a handle func to get data
         '''
@@ -635,7 +594,7 @@ class Parallel_Feeder(object):
         while True:
             try:
                 data = self.__buffer.get(timeout=timeout)  # potentially blocking
-            except self.mp.TimeoutError:
+            except:
                 print('------------>')
                 print('timeout when trying to read batch')
                 print('<------------')
