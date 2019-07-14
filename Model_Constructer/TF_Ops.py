@@ -286,7 +286,7 @@ def rnn_gru_layer(input, rnn_size, batch_size, num_unrolls, bi_direct=False):
     return cell_output, last_state
 
 
-'''loss'''
+''' loss '''
 
 
 def l2_regularization(coef=5e-4, var_list=None, scope='l2_regulariazation'):
@@ -297,7 +297,7 @@ def l2_regularization(coef=5e-4, var_list=None, scope='l2_regulariazation'):
     return penalty
 
 
-'''save & restore'''
+''' save & restore '''
 
 
 def restore(session, save_file, restore_vars={}, raise_if_not_found=False, verbose=True):
@@ -386,14 +386,14 @@ def restore_from_dir(sess, folder_path, raise_if_not_found=False):
     return start_iter
 
 
-'''session'''
+''' session '''
 
 
 def Session():
     return tf.Session(config=tf.ConfigProto(gpu_options=tf.GPUOptions(allow_growth=True), allow_soft_placement=True))
 
 
-'''summary'''
+''' summary '''
 
 
 def kernel_to_image(data, padsize=1, padval=0):

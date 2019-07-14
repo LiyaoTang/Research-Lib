@@ -766,7 +766,7 @@ class Imagenet_VID_Feeder(Feeder):
             refs = refs[idx]
             self._original_refs = refs
 
-        if self._ref_dict is None:  # construct ref to track with limited unroll
+        if self._ref_dict is None:  # construct ref to track with limited unroll (track_ref as idx of original ref)
             ref_dict = defaultdict(lambda: [])
             batch = []
             cur_vid = None
@@ -778,13 +778,13 @@ class Imagenet_VID_Feeder(Feeder):
                     ref_dict[size].append(idx)  # split into groups based on img size
             self._ref_dict = dict(ref_dict)        
 
-        # construct data_ref = [batch, ...], each batch = [track ref, ...] (randomized)
+        # construct data_ref = [batch, ...], each batch = [track_ref, ...] (randomized)
         data_ref = []
         for ref_list in self._ref_dict.values():
             np.random.shuffle(ref_list)
             batch_num = int(np.ceil(len(ref_list) / self.batch_size))  # at least one batch 
-            for _ in range(batch_num):
-                start = batch_num * self.batch_size
+            for i in range(batch_num):
+                start = i * self.batch_size
                 cur_batch = ref_list[start:start + self.batch_size]
                 while len(cur_batch) < self.batch_size:  # fill the last batch with wrapping over
                     cur_batch += ref_list[0:self.batch_size - len(cur_batch)]
@@ -840,20 +840,20 @@ class Imagenet_VID_Feeder(Feeder):
         return img, self._convert_label_type(cur_box)
 
     def _encode_bbox_crop(self, img, prev_box, cur_box, crop_size=227):
-        x, y, w, h = self._xyxy_to_xywh(prev_box)  # prev_box from original imagenet label
-        extended_bbox = np.array([x - w, y - h, x + w, y + h])  # xyxy
-
         img_shape = np.array(img.shape)
+        x, y, w, h = self._xyxy_to_xywh(prev_box)  # prev_box from original imagenet label
+
+        extended_bbox = np.array([x - w, y - h, x + w, y + h])  # xyxy
+        clipped_bbox = np.clip(extended_bbox, 0, img_shape[[1, 0, 1, 0]]).astype(int)  # the actual region to crop
+
         crop_shape = (2 * h, 2 * w, img_shape[-1])
         cropped_img = np.zeros(shape=crop_shape)
-
-        clipped_bbox = np.clip(extended_bbox, 0, img_shape[[1, 0, 1, 0]]).astype(int)  # the actual region to crop
-        x_offset = clipped_bbox[0] - extended_bbox[0]  # offset of actual-expectation crop region/box
-        y_offset = clipped_bbox[1] - extended_bbox[1]
+        # convert coord for actual crop region (clipped_bbox): from img coord to cropped_img coord
+        xyxy_in_crop = clipped_bbox - extended_bbox[[0, 1, 0, 1]]  
 
         # crop on original img
         [xmin, ymin, xmax, ymax] = clipped_bbox
-        cropped_img[y_offset:y_offset + crop_shape[0], x_offset:x_offset + crop_shape[1]] = img[ymin:ymax, xmin:xmax]
+        cropped_img[xyxy_in_crop[1]:xyxy_in_crop[3], xyxy_in_crop[0]:xyxy_in_crop[2]] = img[ymin:ymax, xmin:xmax]
 
         label_box = cur_box - extended_bbox[[0, 1, 0, 1]]  # originated as [x,y,x,y] - [xmin,ymin,xmin,ymin]
         label_box[[0, 2]] = label_box[[0, 2]] / crop_shape[1] * crop_size  # normalized as x / w ratio, then rescale

@@ -389,7 +389,7 @@ class Re3_Tracker(object):
     replicate & extend the re3 tracking model from paper:
     Re3 : Real-Time Recurrent Regression Networks for Visual Tracking of Generic Objects (https://arxiv.org/abs/1705.06368)
     '''
-    def __init__(self, tf_input, tf_label, prev_state, feeder, lstm_size=512, mode='train', config={}):
+    def __init__(self, tf_input, tf_label, prev_state, feeder=None, lstm_size=512, mode='train', config={}):
         '''
         tf_input: [batch, time, img_h, img_w, img_channel] for bbox_encoding in ['mask', 'mesh'] => cur img + mask
                   [batch, time, 2, img_h, img_w, img_channel] for bbox_encoding in ['corner', 'center'] => one cur crop, one prev
@@ -398,11 +398,13 @@ class Re3_Tracker(object):
         self.tf_input = tf_input
         self.tf_label = tf_label
         self.prev_state = tuple(prev_state)
-
+        
+        self._var_scope = tf.get_variable_scope().name
+        self.get_trainable_vars = lambda: tf.trainable_variables(self._var_scope)
         self.lstm_size = lstm_size
         
-        self.encode_bbox = feeder.encode_bbox_to_img
-        self.decode_bbox = feeder.decode_bbox
+        self.encode_bbox = feeder.encode_bbox_to_img if feeder else None
+        self.decode_bbox = feeder.decode_bbox if feeder else None
 
         self.config = config  # data & encoding associated configuration
         assert config['attention'] in ['hard', 'soft', 'soft_fuse']
@@ -426,28 +428,39 @@ class Re3_Tracker(object):
             self.net = self.tf_input - imgnet_mean
             self.net = tf.reshape(self.net, (-1, img_size[0], img_size[1], img_size[2]))  # [-1, img_h, img_w, img_channel]
             if self.config['bbox_encoding'] in ['mask', 'mesh']:  # prepare mask: tf_img contain img & mask
-                if self.config['attention'] == 'hard':  # direct embed 0-1 attention
-                    auxilary_input = tfops.conv_layer(self.net[..., 3:], 96, 11, 4, padding='VALID', activation=None)
-                    self.net = self.net[...,:3]
-                elif self.config['attention'] == 'soft':  # generate (0,1) attention by 1x1 conv
-                    auxilary_input = tfops.conv_layer(self.net, 1, 3, 3, padding='SAME')
-                    auxilary_input = tfops.conv_layer(auxilary_input, 96, 11, 4, padding='VALID', activation=None)
-                    if self.config['bbox_encoding'] == 'mesh': # concat mesh
-                        auxilary_input = tf.concat([auxilary_input, self.net[..., 4:]], axis=-1)
-                    self.net = self.net[...,:3]
-                else:  # soft_fuse: generate (0,1) attention & fuse onto original input by element-size product
-                    mask_3 = tfops.conv_layer(self.net, 3, 3, 3, padding='SAME', activation=None)
-                    mask_1 = tfops.conv_layer(self.net, 3, 1, 1, padding='SAME', activation=None)
-                    mask = tf.nn.softmax(tf.mask, axis=[-3, -2])  # [-1, img_h, img_w, 1]
-                    mask = tf.tile(mask, [1, 1, 1, img_size[-1]])  # [-1, img_h, img_w, img_channel]
-                    if self.config['bbox_encoding'] == 'mesh':
-                        auxilary_input = tfops.conv_layer(self.net[..., 3:], 96, 11, 4, padding='VALID', activation=None)
-                    self.net = self.net * mask  # apply attention onto rgb channel (broadcast to batch)
+                with tf.variable_scope(self.config['attention']):
 
+                    if self.config['attention'] == 'hard':  # direct embed 0-1 attention
+                        mask = tfops.conv_layer(self.net[..., 3:4], 96, 11, 4, padding='VALID', activation=None, scope='mask')
+                        auxilary_input = mask
+                        if self.config['bbox_encoding'] == 'mesh':
+                            mesh = tfops.conv_layer(self.net[..., 4:], 96, 11, 4, padding='VALID', activation=None, scope='mesh')
+                            auxilary_input = tf.concat([mask, mesh], axis=-1)
+                        self.net = self.net[...,:3]
+                        
+                    elif self.config['attention'] == 'soft':  # generate attention by 1x1 conv
+                        with tf.variable_scope('mask'):
+                            mask = tfops.conv_layer(self.net, 1, 3, 3, padding='SAME')
+                            mask = tfops.conv_layer(mask, 96, 11, 4, padding='VALID', activation=None)
+                            auxilary_input = mask
+                        if self.config['bbox_encoding'] == 'mesh':  # concat mesh
+                            mesh = tfops.conv_layer(self.net[..., 4:], 96, 11, 4, padding='VALID', activation=None, scope='mesh')
+                            auxilary_input = tf.concat([mask, mesh], axis=-1)
+                        self.net = self.net[...,:3]
+
+                    else:  # soft_fuse: generate (0,1) attention & fuse onto original input by element-size product
+                        with tf.variable_scope('mask'):
+                            mask_3 = tfops.conv_layer(self.net, 3, 3, 3, padding='SAME', activation=None)
+                            mask_1 = tfops.conv_layer(self.net, 3, 1, 1, padding='SAME', activation=None)
+                            mask = tf.nn.softmax(tf.mask, axis=[-3, -2])  # [-1, img_h, img_w, 1]
+                            mask = tf.tile(mask, [1, 1, 1, img_size[-1]])  # [-1, img_h, img_w, img_channel]
+                            self.net = self.net * mask  # apply attention onto rgb channel (broadcast to batch)
+                        if self.config['bbox_encoding'] == 'mesh':
+                            auxilary_input = tfops.conv_layer(self.net[..., 3:], 96, 11, 4, padding='VALID', activation=None, scope='mesh')
             else:  # cropping
                 img_size = [227, 227, 3]
                 auxilary_input = None
-                config['fuse_type'] = 'flat' # other settings not allowed
+                self.config['fuse_type'] = 'flat' # other settings not allowed
 
         with tf.variable_scope('re3'):
             self.net = tfm.alexnet_conv_layers(self.net, auxilary_input=auxilary_input, fuse_type=config['fuse_type'])  # [-1, feat]
@@ -510,20 +523,21 @@ class Re3_Tracker(object):
                             tf.summary.scalar('full_loss', self.loss)]
             self.summary['loss'] = tf.summary.merge(loss_summary)
 
-            conv_vars = [v for v in tf.trainable_variables() if 'conv' in v.name and 'W_conv' in v.name and
+            var_list = self.get_trainable_vars()
+            conv_vars = [v for v in var_list if 'conv' in v.name and 'W_conv' in v.name and
                          (v.get_shape().as_list()[0] != 1 or v.get_shape().as_list()[1] != 1)]
             conv_summary = [tfops.conv_variable_summaries(var, scope=var.name.replace('/', '_')[:-2]) for var in conv_vars]
             conv_summary = [s for s in conv_summary if s is not None]
             self.summary['conv'] = tf.summary.merge(conv_summary)
 
-            lstm_vars = [var for var in tf.trainable_variables() if 'lstm1' in var.name or 'lstm2' in var.name]
+            lstm_vars = [var for var in var_list if 'lstm1' in var.name or 'lstm2' in var.name]
             lstm_summary = [tfops.variable_summaries(var, var.name[:-2]) for var in lstm_vars]
             self.summary['lstm'] = tf.summary.merge(lstm_summary)
         self.summary['all'] = tf.summary.merge_all()
 
     def build_train_step(self, config={}):
         self._build_loss()
-        var_list = config['var_list'] if 'var_list' in config else tf.trainable_variables()
+        var_list = config['var_list'] if 'var_list' in config else self.get_trainable_vars()
         learning_rate = config['learning_rate'] if 'learning_rate' in config else tf.placeholder(tf.float32)
         renew = config['renew'] if 'renew' in config else False
         if not hasattr(self, 'train_step') or renew:
@@ -538,7 +552,7 @@ class Re3_Tracker(object):
                 'conv1': [v for v in var_list if 'preprocess' in v.name or 'conv1' in v.name],
             }
             self.stablize_step = {}
-            for k, v_list in varlist_dict:
+            for k, v_list in varlist_dict.items():
                 self.stablize_step[k] = optimizer.minimize(self.loss, global_step=global_step, var_list=v_list)
 
     def inference(self, track, bboxes, sess, display_func=None):
