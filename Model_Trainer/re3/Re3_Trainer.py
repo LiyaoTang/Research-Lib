@@ -80,35 +80,43 @@ class Re3_Trainer(object):
 
     def _construct_placeholder(self):
         args = self.args
+        if args.bbox_encoding == 'crop':
+            channel_size = 3
+        elif args.bbox_encoding == 'mask':
+            channel_size = 4
+        else:  # mesh
+            channel_size = 6
+        input_shape = [None, None, None, None, channel_size]
+        label_shape = [None, None, 4]
+        
         if args.use_tfdataset:
-            feeder_gen = self.data_feeder.iterate_data()
-            tf_dataset = tf.data.Dataset.from_generator(feeder_gen, (tf.uint8, tf.float32))
-            tf_dataset = tf_dataset.prefetch(2)
-            tf_dataset_iter = tf_dataset.make_one_shot_iterator()
-            tf_input, tf_label = tf_dataset_iter.get_next()
+            with tf.variable_scope('dataset'):
+                data_gen = self.data_feeder.iterate_data
+                tf_dataset = tf.data.Dataset.from_generator(data_gen, (tf.float32, tf.float32), (input_shape, label_shape))
+                tf_dataset = tf_dataset.prefetch(2)
+                tf_dataset_iter = tf_dataset.make_initializable_iterator()
+                tf_input, tf_label = tf_dataset_iter.get_next()
         else:
-            if args.bbox_encoding == 'crop':
-                channel_size = 3
-            elif args.bbox_encoding == 'mask':
-                channel_size = 4
-            else:  # mesh
-                channel_size = 6
-            tf_input = tf.placeholder(tf.float32, shape=[None, None, None, None, channel_size])
-            tf_label = tf.placeholder(tf.float32, shape=[None, None, 4])
+            tf_dataset_iter = None
+            tf_input = tf.placeholder(tf.float32, shape=input_shape)
+            tf_label = tf.placeholder(tf.float32, shape=label_shape)
         self.tf_input = tf_input
         self.tf_label = tf_label
+        self.tf_dataset_iter = tf_dataset_iter
 
         if args.run_val:
             self.val_placeholders = {
                 'input': tf.placeholder(tf.float32, shape=[None, None, None, None, channel_size]),
                 'label': tf.placeholder(tf.float32, shape=[None, None, 4]),
-                'prev_state': tuple([tf.placeholder(tf.float32, shape=(1, args.lstm_size)) for _ in range(4)]),  # hashable tuple
+                # 'prev_state': tuple([tf.placeholder(tf.float32, shape=(1, args.lstm_size)) for _ in range(4)]),  # hashable tuple
+                'prev_state': None,
             }
 
-        tf_prev_state = tuple([tf.placeholder(tf.float32, shape=(1, args.lstm_size)) for _ in range(4)])  # hashable tuple
-        tf_init_state = tuple([np.zeros(shape=(1, args.lstm_size)) for _ in range(4)])
-        self.tf_prev_state = tf_prev_state
-        self.tf_init_state = tf_init_state
+        # tf_prev_state = tuple([tf.placeholder(tf.float32, shape=(None, args.lstm_size)) for _ in range(4)])  # hashable tuple
+        # tf_init_state = lambda batch_size: tuple([np.zeros(shape=(batch_size, args.lstm_size)) for _ in range(4)])
+        # self.tf_prev_state = tf_prev_state
+        # self.tf_init_state = tf_init_state
+        self.tf_prev_state = None
 
     def construct_model(self):
         args = self.args
@@ -126,9 +134,14 @@ class Re3_Trainer(object):
                                                lstm_size=args.lstm_size, config=tracker_cfg)
         train_cfg = {
             'learning_rate': tf.placeholder(tf.float32) if args.lrn_rate is None else args.lrn_rate,
+            'var_list': [v for v in tf.trainable_variables() if v.name.startswith(args.weight_prefix)]
         }
+        print(train_cfg)
         self.tracker.build_train_step(config=train_cfg)
-        self.tracker.build_summary()
+        summary_cfg = {
+            'var_list': [v for v in tf.trainable_variables() if v.name.startswith(args.weight_prefix) or 'conv1' in v.name]
+        }
+        self.tracker.build_summary(config=)
 
         # logging validation
         self.val_scope = 'val'
@@ -223,9 +236,11 @@ class Re3_Trainer(object):
             self._finalize_sess()
             self.is_training = True
             if dummy_summary:
-                feed_dict = {self.tracker.tf_input: np.zeros((1, 2, 227, 227, self.tracker.tf_input.get_shape().as_list()[-1])),
-                            self.tracker.tf_label: np.zeros((1, 2, self.tracker.tf_label.get_shape().as_list()[-1])),
-                            self.tracker.prev_state: self.tf_init_state}
+                feed_dict = {
+                    self.tracker.tf_input: np.zeros((1, 2, 227, 227, self.tracker.tf_input.get_shape().as_list()[-1])),
+                    self.tracker.tf_label: np.zeros((1, 2, self.tracker.tf_label.get_shape().as_list()[-1])),
+                    # self.tracker.prev_state: self.tf_init_state(1),
+                }
                 self.summary_writer.add_summary(self.sess.run(self.tracker.summary['all'], feed_dict=feed_dict))
                 self.summary_writer.flush()
 
@@ -252,19 +267,15 @@ class Re3_Trainer(object):
         plt.close()
 
     # routine to update model
-    def run_train_step_feeddict(self, input_batch, label_batch, global_step, display=False):
-        feed_dict = {
-            self.tracker.tf_input: input_batch,
-            self.tracker.tf_label: label_batch,
-            self.tracker.prev_state: self.tf_init_state
-        }
+    def run_train_step(self, feed_dict, global_step, display=False):
         op_to_run = [self.train_step]
 
         # record summary
         if global_step % 5000 == 0:  # conv, lstm, loss => all summary
             op_to_run += [self.tracker.summary['all']]
         elif global_step % 1000 == 0:  # lstm, loss
-            op_to_run += [self.tracker.summary['lstm'], self.tracker.summary['loss']]
+            # op_to_run += [self.tracker.summary['lstm'], self.tracker.summary['loss']]
+            pass
         elif global_step % 100 == 0:  # loss
             op_to_run += [self.tracker.summary['loss']]
 
@@ -307,14 +318,20 @@ class Re3_Trainer(object):
             # training strategy: initial unrolls=2, batch=64; then, unrolls*=2, batch/=2, till unroll=32 (batch=4)
             # stablize first few convs, then jointly train
             num_unrolls = 2
-            batch_size = 64
+            batch_size = 2
             epoch = 2
             # allow only specified vars to train: to stablize (for 2 epoch, no re-config)
             self.prepare_train(num_unrolls, batch_size, dummy_summary=True)
-            self.train_step = self.tracker.stablize_step['preprocess']
+            self.train_step = self.tracker.train_step
+            print('training prepared')
             for ep in range(epoch):
                 for input_batch, label_batch in self.data_feeder.iterate_data():
-                    self.run_train_step_feeddict(input_batch, label_batch, self.global_step, args.display)
+                    feed_dict = {
+                        self.tracker.tf_input: input_batch,
+                        self.tracker.tf_label: label_batch,
+                        # self.tracker.prev_state: self.tf_init_state(batch_size),
+                    }
+                    self.run_train_step(feed_dict, self.global_step, args.display)
                     self.global_step += 1
 
             # num_unrolls = 2
@@ -322,7 +339,7 @@ class Re3_Trainer(object):
             # while num_unrolls <= 32:
             #     self.prepare_train(num_unrolls, batch_size)
             #     for input_batch, label_batch in self.data_feeder.iterate_data():
-            #         run_train_step_feeddict(input_batch, label_batch, self.global_step, args.display)
+            #         run_train_step(input_batch, label_batch, self.global_step, args.display)
             #         self.global_step += 1
             #     num_unrolls *= 2
             #     batch_size /= 2
@@ -341,51 +358,50 @@ class Re3_Trainer(object):
                 self.saver.save(self.sess, checkpoint_file, global_step=self.global_step)
             raise
 
-    def run_train_step_tfdataset(self, global_step, display=False):
-        op_to_run = [self.tracker.train_step]
-        # record summary
-        if global_step % 1000 == 0:  # conv, lstm, loss => all summary
-            op_to_run += [tracker.summary['all']]
-        elif global_step % 100 == 0:  # lstm, loss
-            op_to_run += [tracker.summary['lstm'], tracker.summary['loss']]
-        elif global_step % 10 == 0:  # loss
-            op_to_run += [tracker.summary['loss']]
-
-        # get pred bbox for display
-        if display:
-            op_to_run += [tracker.pred]
-
-        # run ops
-        op_output = self.sess.run([op_to_run], feed_dict=feed_dict)
-
-        # display
-        if display:
-            track_pred = op_to_run[-1][0]
-            track_img = input_batch[0]
-            label_box = [train_feeder.revert_label_type(l) for l in label_batch[0]]
-            pred_box = [train_feeder.revert_label_type(p) for p in track_pred]
-
-            display_img_pred_label(track_img, label_box, pred_box)
-            op_to_run = op_to_run[:-1] # get rid of pred
-
-        # write summary
-        cur_summary = op_output[1:]
-        if cur_summary:
-            for s in cur_summary:
-                summary_writer.add_summary(s, global_step=global_step)
-
-        # save new ckpt (over-write old one)
-        if global_step % 500 == 0:
-            self.saver.save(self.sess, self.ckpt_path, global_step=global_step)
-            if self.args.run_val:
-                self.val_model.record_val(self.ckpt_path)
-
     def train_tfdataset(self):
-        while True:
-            try:
-                self.run_train_step_feeddict()
-            except:
-                if self.global_step <= args.max_step:
-                    continue
-                else:
-                    break
+        # start training
+        args = self.args
+        start_time = time.time()
+        try:
+            # training strategy: initial unrolls=2, batch=64; then, unrolls*=2, batch/=2, till unroll=32 (batch=4)
+            # stablize first few convs, then jointly train
+            num_unrolls = 2
+            batch_size = 2
+            epoch = 2
+            # allow only specified vars to train: to stablize (for 2 epoch, no re-config)
+            self.prepare_train(num_unrolls, batch_size, dummy_summary=True)
+            self.train_step = self.tracker.train_step
+            feed_dict = {}
+            print('training prepared')
+            for _ in range(epoch):
+                self.sess.run(self.tf_dataset_iter.initializer)
+                while True:
+                    try:
+                        self.run_train_step(feed_dict, self.global_step, args.display)
+                        self.global_step += 1
+                    except:
+                        break
+            # num_unrolls = 2
+            # batch_size = 64
+            # while num_unrolls <= 32:
+            #     self.prepare_train(num_unrolls, batch_size)
+            #     for input_batch, label_batch in self.data_feeder.iterate_data():
+            #         run_train_step(input_batch, label_batch, self.global_step, args.display)
+            #         self.global_step += 1
+            #     num_unrolls *= 2
+            #     batch_size /= 2
+
+            # save the lastest model
+            self.saver.save(self.sess, self.ckpt_path, global_step=self.global_step)
+            self.summary_writer.flush()
+            print('training done')
+            sys.stdout.flush()
+
+        except:  # save on unexpected termination
+            if self.paral_feeder is not None:
+                self.paral_feeder.shutdown()
+            if not args.debug:
+                print('saving...')
+                checkpoint_file = os.path.join(args.log_dir, 'checkpoints', 'model.ckpt')
+                self.saver.save(self.sess, checkpoint_file, global_step=self.global_step)
+            raise

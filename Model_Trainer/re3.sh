@@ -24,11 +24,12 @@ rand_seed="None"
 
 run_val="False"
 worker_num="1"
-buffer_size="5"
+buffer_size="2"
 use_parallel="True"
-use_tfdataset="False"
+use_tfdataset="True"
 display="False"
 
+weight_prefix="preprocess/"
 restore_dir=""
 model_name="re3-${attention}_${bbox_encoding}"
 
@@ -46,7 +47,8 @@ python re3.py --lrn_rate $lrn_rate \
               --run_val $run_val \
               --display $display \
               --restore_dir "$restore_dir" \
-              --model_name "$model_name"
+              --model_name "$model_name" \
+              --weight_prefix "$weight_prefix"
             # --model_name "re3-mask_lstm512_hard_2019_07_09_00_01_00"
                 # --log ""
                 #  &

@@ -389,7 +389,7 @@ class Re3_Tracker(object):
     replicate & extend the re3 tracking model from paper:
     Re3 : Real-Time Recurrent Regression Networks for Visual Tracking of Generic Objects (https://arxiv.org/abs/1705.06368)
     '''
-    def __init__(self, tf_input, tf_label, prev_state, feeder=None, lstm_size=512, mode='train', config={}):
+    def __init__(self, tf_input, tf_label, prev_state=None, feeder=None, lstm_size=512, config={}):
         '''
         tf_input: [batch, time, img_h, img_w, img_channel] for bbox_encoding in ['mask', 'mesh'] => cur img + mask
                   [batch, time, 2, img_h, img_w, img_channel] for bbox_encoding in ['corner', 'center'] => one cur crop, one prev
@@ -397,11 +397,13 @@ class Re3_Tracker(object):
         '''
         self.tf_input = tf_input
         self.tf_label = tf_label
-        self.prev_state = tuple(prev_state)
+        self.prev_state = tuple(prev_state) if prev_state is not None else None
+        self.lstm_size = lstm_size
         
+        self.learning_rate = None
+        self.train_var_list = None
         self._var_scope = tf.get_variable_scope().name
         self.get_trainable_vars = lambda: tf.trainable_variables(self._var_scope)
-        self.lstm_size = lstm_size
         
         self.encode_bbox = feeder.encode_bbox_to_img if feeder else None
         self.decode_bbox = feeder.decode_bbox if feeder else None
@@ -419,7 +421,6 @@ class Re3_Tracker(object):
             shape_tensor = tf.shape(self.tf_input)
             shape_list = self.tf_input.get_shape().as_list()
             input_shape = [shape_list[i] if shape_list[i] is not None else shape_tensor[i] for i in range(len(shape_list))]
-
             batch_size = input_shape[0]
             num_unrolls = input_shape[1]
             img_size = input_shape[-3:]
@@ -480,7 +481,6 @@ class Re3_Tracker(object):
 
             with tf.variable_scope('fc6'):
                 feat_len = self.net.get_shape().as_list()[-1]
-                print(feat_len)
                 self.net = tf.reshape(self.net, [-1, feat_len])
                 feat_len = 1024
                 self.net = tfops.dense_layer(self.net, feat_len, name='fc')  # [-1,feat=1024]
@@ -490,8 +490,11 @@ class Re3_Tracker(object):
                 raise NotImplementedError
             else:
                 # output as bbox regress: [batch, time, 4]
-                self.net, state = tfm.re3_lstm_tracker(self.net, num_unrolls, lstm_size=lstm_size, prev_state=self.prev_state)
-        self.lstm_state = [*state[0], *state[1]]
+                self.net, state = tfm.re3_lstm_tracker(self.net, num_unrolls, batch_size, lstm_size=self.lstm_size, prev_state=self.prev_state)
+        self.lstm_state = tuple([*state[0], *state[1]])
+        if self.prev_state is None:  # bypass placeholder (mask tensor by numpy value in inference)
+            self.prev_state = self.lstm_state
+
         self.logits = self.net  # [batch, time, 4], 4=encoded xywh/xyxy
 
         with tf.variable_scope('pred'):
@@ -504,18 +507,20 @@ class Re3_Tracker(object):
                 pred = self.logits * multiplier
             self.pred = pred  # [batch, time, 4], 4=xywh/xyxy
 
-    def _build_loss(self):
+    def _build_loss(self, l2_var_list=None):
         if not hasattr(self, 'loss'):
             with tf.variable_scope('loss'):
-                diff = tf.reduce_sum(tf.abs(self.pred - self.tf_label, name='diff'), axis=-1) # L1 loss
+                diff = tf.reduce_sum(tf.abs(self.pred - self.tf_label, name='diff'), axis=-1)  # L1 loss
                 self.reg_loss = tf.reduce_mean(diff, name='loss')
-                self.l2_loss = tfops.l2_regularization(scope='l2_weight_penalty')
+                self.l2_loss = tfops.l2_regularization(var_list=l2_var_list, scope='l2_weight_penalty')
                 self.loss = self.reg_loss + self.l2_loss
         
-    def build_summary(self):
+    def build_summary(self, config={}):
         if hasattr(self, 'summary'):
             return
-        self._build_loss()
+        var_list = config['var_list'] if 'var_list' in config else (self.train_var_list if self.train_var_list else self.get_trainable_vars())
+        self._build_loss(var_list)
+
         self.summary = {'loss': None, 'conv': None, 'lstm': None, 'all': None}
         with tf.variable_scope('summaries'):
             loss_summary = [tf.summary.scalar('reg_loss', self.reg_loss),
@@ -523,37 +528,39 @@ class Re3_Tracker(object):
                             tf.summary.scalar('full_loss', self.loss)]
             self.summary['loss'] = tf.summary.merge(loss_summary)
 
-            var_list = self.get_trainable_vars()
             conv_vars = [v for v in var_list if 'conv' in v.name and 'W_conv' in v.name and
                          (v.get_shape().as_list()[0] != 1 or v.get_shape().as_list()[1] != 1)]
             conv_summary = [tfops.conv_variable_summaries(var, scope=var.name.replace('/', '_')[:-2]) for var in conv_vars]
             conv_summary = [s for s in conv_summary if s is not None]
-            self.summary['conv'] = tf.summary.merge(conv_summary)
+            self.summary['conv'] = tf.summary.merge(conv_summary) if conv_summary else None
 
             lstm_vars = [var for var in var_list if 'lstm1' in var.name or 'lstm2' in var.name]
             lstm_summary = [tfops.variable_summaries(var, var.name[:-2]) for var in lstm_vars]
-            self.summary['lstm'] = tf.summary.merge(lstm_summary)
+            self.summary['lstm'] = tf.summary.merge(lstm_summary) if lstm_summary else None
         self.summary['all'] = tf.summary.merge_all()
+        print(self.summary)
 
     def build_train_step(self, config={}):
-        self._build_loss()
         var_list = config['var_list'] if 'var_list' in config else self.get_trainable_vars()
+        l2_var_list = config['l2_var_list'] if 'l2_var_list' in config else var_list
         learning_rate = config['learning_rate'] if 'learning_rate' in config else tf.placeholder(tf.float32)
+
+        self._build_loss(l2_var_list)
         renew = config['renew'] if 'renew' in config else False
         if not hasattr(self, 'train_step') or renew:
+            self.train_var_list = var_list
             self.learning_rate = learning_rate
             optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
             with tf.device('/cpu:0'):  # create cnt on cpu
                 global_step = tf.train.get_or_create_global_step()
-            self.train_step = optimizer.minimize(self.loss, global_step=global_step, var_list=var_list,
-                                                     colocate_gradients_with_ops=True)
-            varlist_dict = {
-                'preprocess': [v for v in var_list if 'preprocess' in v.name],
-                'conv1': [v for v in var_list if 'preprocess' in v.name or 'conv1' in v.name],
-            }
-            self.stablize_step = {}
-            for k, v_list in varlist_dict.items():
-                self.stablize_step[k] = optimizer.minimize(self.loss, global_step=global_step, var_list=v_list)
+            self.train_step = optimizer.minimize(self.loss, global_step=global_step, var_list=var_list)
+            # varlist_dict = {
+            #     'preprocess': [v for v in var_list if 'preprocess' in v.name],
+            #     'conv1': [v for v in var_list if 'preprocess' in v.name or 'conv1' in v.name],
+            # }
+            # self.stablize_step = {}
+            # for k, v_list in varlist_dict.items():
+            #     self.stablize_step[k] = optimizer.minimize(self.loss, global_step=global_step, var_list=v_list)
 
     def inference(self, track, bboxes, sess, display_func=None):
         '''

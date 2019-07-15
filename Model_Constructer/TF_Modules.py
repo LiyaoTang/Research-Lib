@@ -83,7 +83,7 @@ def alexnet_conv_layers(input, auxilary_input=None, prelu_initializer=tf.constan
 
     return feat_concat
 
-def re3_lstm_tracker(input, num_unrolls, prev_state, lstm_size=512, rnn_type='lstm'):
+def re3_lstm_tracker(input, num_unrolls, batch_size, prev_state=None, lstm_size=512, rnn_type='lstm'):
     '''
     input: object features in time sequence, expected to be [batch, time, feat_t + feat_t-1], with time = num_unrolls
     prev_state: the initial state for RNN cell, set to placeholder to enable single-step inference
@@ -100,7 +100,7 @@ def re3_lstm_tracker(input, num_unrolls, prev_state, lstm_size=512, rnn_type='ls
         if prev_state is not None: # if traker already running
             state1 = tf.contrib.rnn.LSTMStateTuple(prev_state[0], prev_state[1])
         else:
-            state1 = lstm1.zero_state(dtype=tf.float32)
+            state1 = lstm1.zero_state(batch_size, dtype=tf.float32)
 
         # unroll
         lstm1_outputs, state1 = tf.nn.dynamic_rnn(lstm1, input, initial_state=state1, swap_memory=True)
@@ -112,10 +112,10 @@ def re3_lstm_tracker(input, num_unrolls, prev_state, lstm_size=512, rnn_type='ls
         if prev_state is not None: # if still one video (traker already running)
             state2 = tf.contrib.rnn.LSTMStateTuple(prev_state[2], prev_state[3])
         else:
-            state2 = lstm2.zero_state(dtype=tf.float32)
+            state2 = lstm2.zero_state(batch_size, dtype=tf.float32)
 
         # unroll
-        lstm2_inputs = tf.concat([input, lstm1_outputs], 2)
+        lstm2_inputs = tf.concat([input, lstm1_outputs], -1)
         lstm2_outputs, state2 = tf.nn.dynamic_rnn(lstm2, lstm2_inputs, initial_state=state2, swap_memory=True)
 
         flatten_out = tf.reshape(lstm2_outputs, [-1, lstm2_outputs.get_shape().as_list()[-1]])  # flatten as [batch x time, feat]

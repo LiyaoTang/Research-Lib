@@ -703,7 +703,6 @@ class Imagenet_VID_Feeder(Feeder):
     def __init__(self, data_ref_path, class_num, class_name=None, use_onehot=True, mode='VOT',
                  num_unrolls=None, batch_size=None, img_lib='cv2', config={}):
         super(Imagenet_VID_Feeder, self).__init__(data_ref_path, class_num, class_name, use_onehot, config)
-        self._ref_dict = None
         self._original_refs = None
 
         assert img_lib in ['cv2', 'skimage']
@@ -759,28 +758,25 @@ class Imagenet_VID_Feeder(Feeder):
     def _load_data_ref(self):
         # TODO:should use pandas
         if self._original_refs is None:  # load the prepared original refs
-            self._ref_dict = None
             refs = np.load(self.data_ref_path)
             # sort first by package, then video snippet, then track, then frame
             idx = np.lexsort((refs[:, 2], refs[:, 3], refs[:, 1], refs[:, 0]))
             refs = refs[idx]
             self._original_refs = refs
 
-        if self._ref_dict is None:  # construct ref to track with limited unroll (track_ref as idx of original ref)
-            ref_dict = defaultdict(lambda: [])
-            batch = []
-            cur_vid = None
-            for idx in range(len(self._original_refs) - self.num_unrolls):
-                start = list(self._original_refs[idx][[0, 1, 3]])
-                end = list(self._original_refs[idx + self.num_unrolls - 1][[0, 1, 3]])
-                size = tuple(self._original_refs[idx][[-2, -1]])
-                if start == end:  # still in the same track
-                    ref_dict[size].append(idx)  # split into groups based on img size
-            self._ref_dict = dict(ref_dict)        
+        ref_dict = defaultdict(lambda: [])
+        batch = []
+        cur_vid = None
+        for idx in range(len(self._original_refs) - self.num_unrolls):
+            start = list(self._original_refs[idx][[0, 1, 3]])
+            end = list(self._original_refs[idx + self.num_unrolls - 1][[0, 1, 3]])
+            size = tuple(self._original_refs[idx][[-2, -1]])
+            if start == end:  # still in the same track
+                ref_dict[size].append(idx)  # split into groups based on img size        
 
         # construct data_ref = [batch, ...], each batch = [track_ref, ...] (randomized)
         data_ref = []
-        for ref_list in self._ref_dict.values():
+        for ref_list in ref_dict.values():
             np.random.shuffle(ref_list)
             batch_num = int(np.ceil(len(ref_list) / self.batch_size))  # at least one batch 
             for i in range(batch_num):

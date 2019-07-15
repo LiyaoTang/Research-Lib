@@ -35,6 +35,7 @@ parser.add_argument('--attention', type=str, dest='attention')
 parser.add_argument('--num_unrolls', default=2, type=int, dest='num_unrolls')
 parser.add_argument('--lstm_size', default=512, type=int, dest='lstm_size')
 parser.add_argument('--lrn_rate', default=None, type=float, dest='lrn_rate')
+parser.add_argument('--weight_prefix', default='', type=str, dest='weight_prefix')
 
 parser.add_argument('--fuse_type', default='spp', type=str, dest='fuse_type')
 parser.add_argument('--label_type', default='center', type=str, dest='label_type')
@@ -46,7 +47,7 @@ parser.add_argument('--use_inference_prob', default=-1, type=float, dest='use_in
 parser.add_argument('--max_step', default=1e6, type=float, dest='max_step')
 parser.add_argument('--rand_seed', default=None, type=int, dest='rand_seed')
 
-parser.add_argument('--batch_size', default=64, type=int, dest='num_unrolls')
+parser.add_argument('--batch_size', default=64, type=int, dest='batch_size')
 parser.add_argument('--run_val', default=True, type=str2bool, dest='run_val')
 parser.add_argument('--worker_num', default=1, type=int, dest='worker_num')
 parser.add_argument('--buffer_size', default=5, type=int, dest='buffer_size')
