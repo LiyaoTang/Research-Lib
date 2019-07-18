@@ -168,8 +168,8 @@ def spatial_pyramid_pooling(input, bin_dimensions, pooling_mode='max', scope='sp
 
 
 def conv(input, kernel, biases, stride_w, stride_h, padding, num_groups=1):
-        # Creates convolutional layers supporting the "group" parameter
     '''
+    Creates convolutional layers supporting the "group" parameter
     From https://github.com/ethereon/caffe-tensorflow
     '''
     def convolve(i, k): return tf.nn.conv2d(i, k, [1, stride_h, stride_w, 1], padding=padding)

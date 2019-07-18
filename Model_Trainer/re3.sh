@@ -5,8 +5,8 @@ if [ "$BASH_VERSION" = '' ]; then
     exit
 fi
 
-trap "exit" INT TERM # convert other temination signal to EXIT
-trap "kill 0" EXIT # crtl-C stop the current & background script
+trap "exit" INT TERM  # convert other temination signal to EXIT
+trap "kill 0" EXIT  # crtl-C stop the current & background script
 
 cd ./re3
 

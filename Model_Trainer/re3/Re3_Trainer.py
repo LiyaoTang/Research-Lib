@@ -141,7 +141,7 @@ class Re3_Trainer(object):
         summary_cfg = {
             'var_list': [v for v in tf.trainable_variables() if v.name.startswith(args.weight_prefix) or 'conv1' in v.name]
         }
-        self.tracker.build_summary(config=)
+        self.tracker.build_summary(config=summary_cfg)
 
         # logging validation
         self.val_scope = 'val'
