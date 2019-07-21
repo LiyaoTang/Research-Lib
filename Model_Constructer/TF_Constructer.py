@@ -440,20 +440,22 @@ class Re3_Tracker(object):
                         self.net = self.net[...,:3]
                         
                     elif self.config['attention'] == 'soft':  # generate attention by 1x1 conv
-                        with tf.variable_scope('mask'):
-                            mask = tfops.conv_layer(self.net, 1, 3, 3, padding='SAME')
-                            mask = tfops.conv_layer(mask, 96, 11, 4, padding='VALID', activation=None)
-                            auxilary_input = mask
+                        mask = tfops.conv_layer(self.net, 1, 3, 1, padding='SAME', scope='gen_mask')
+                        print(mask)
+                        mask = tfops.conv_layer(mask, 96, 11, 4, padding='VALID', activation=None, scope='mask')
+                        print(mask)
+                        auxilary_input = mask
                         if self.config['bbox_encoding'] == 'mesh':  # concat mesh
                             mesh = tfops.conv_layer(self.net[..., 4:], 96, 11, 4, padding='VALID', activation=None, scope='mesh')
                             auxilary_input = tf.concat([mask, mesh], axis=-1)
-                        self.net = self.net[...,:3]
+                        self.net = self.net[..., :3]
+                        print(self.net)
 
                     else:  # soft_fuse: generate (0,1) attention & fuse onto original input by element-size product
-                        with tf.variable_scope('mask'):
-                            mask_3 = tfops.conv_layer(self.net, 3, 3, 3, padding='SAME', activation=None)
-                            mask_1 = tfops.conv_layer(self.net, 3, 1, 1, padding='SAME', activation=None)
-                            mask = tf.nn.softmax(tf.mask, axis=[-3, -2])  # [-1, img_h, img_w, 1]
+                        mask_3 = tfops.conv_layer(self.net, 3, 3, 1, padding='SAME', activation=None, scope='mask_3')
+                        mask_1 = tfops.conv_layer(self.net, 3, 1, 1, padding='SAME', activation=None, scope='mask_1')
+                        mask = tf.nn.softmax(tf.mask, axis=[-3, -2])  # [-1, img_h, img_w, 1]
+                        with tf.variable_scope('fuse'):
                             mask = tf.tile(mask, [1, 1, 1, img_size[-1]])  # [-1, img_h, img_w, img_channel]
                             self.net = self.net * mask  # apply attention onto rgb channel (broadcast to batch)
                         if self.config['bbox_encoding'] == 'mesh':
@@ -461,7 +463,7 @@ class Re3_Tracker(object):
             else:  # cropping
                 img_size = [227, 227, 3]
                 auxilary_input = None
-                self.config['fuse_type'] = 'flat' # other settings not allowed
+                self.config['fuse_type'] = 'flat'  # other settings not allowed
 
         with tf.variable_scope('re3'):
             self.net = tfm.alexnet_conv_layers(self.net, auxilary_input=auxilary_input, fuse_type=config['fuse_type'])  # [-1, feat]
@@ -550,6 +552,7 @@ class Re3_Tracker(object):
         if not hasattr(self, 'train_step') or renew:
             self.train_var_list = var_list
             self.learning_rate = learning_rate
+            # TODO: TF 2.0: optimizer = tf.keras.optimizers.Adam(learning_rate)
             optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
             with tf.device('/cpu:0'):  # create cnt on cpu
                 global_step = tf.train.get_or_create_global_step()

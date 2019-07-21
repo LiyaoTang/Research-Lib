@@ -79,7 +79,7 @@ def max_unpooling(input, factor, scope='max_unpooling'):
     input: A Tensor of shape [batch, d0, d1...dn, channel]
     return: A Tensor of shape [batch, factor*d0, factor*d1...factor*dn, channel]
     '''
-    with tf.name_scope(scope) as sc:
+    with tf.variable_scope(scope) as sc:
         shape = input.get_shape().as_list()
         dim = len(shape[1:-1])
         out = (tf.reshape(input, [-1] + shape[-dim:]))
@@ -98,7 +98,7 @@ def average_unpooling(input, factor, scope='average_unpooling'):
     input: A Tensor of shape [batch, d0, d1...dn, channel]
     return: A Tensor of shape [batch, factor*d0, factor*d1...factor*dn, channel]
     '''
-    with tf.name_scope(scope) as sc:
+    with tf.variable_scope(scope) as sc:
         shape = input.get_shape().as_list()
         dim = len(shape[1:-1])
         out = (tf.reshape(input, [-1] + shape[-dim:]))
@@ -450,9 +450,9 @@ def cond_scope(scope):
 
 def variable_summaries(var, scope=''):
     # Some useful stats for variables.
-    if len(scope) > 0:
-        scope = '/' + scope
-    with tf.name_scope('summaries' + scope):
+    cur_scope = tf.get_variable_scope().name
+    scope = 'summaries/' + scope if cur_scope == '' else scope  # not prepend 'summaries' if already in 'summaries' scope
+    with tf.variable_scope(scope):
         mean = tf.reduce_mean(var)
         with tf.device('/cpu:0'):
             sum_op = tf.summary.scalar('mean', mean)
@@ -464,8 +464,11 @@ def conv_variable_summaries(var, scope=''):
     # Useful stats for variables and the kernel images.
     variable_summaries(var, scope)
     if len(scope) > 0:
-        scope = '/' + scope
-    with tf.name_scope('summaries/conv' + scope):
+        scope = 'conv/' + scope
+    cur_scope = tf.get_variable_scope().name
+    scope = 'summaries/' + scope if cur_scope == '' else scope  # not prepend 'summaries' if already in 'summaries' scope
+
+    with tf.variable_scope(scope):
         var_shape = var.get_shape().as_list()
         sum_op = None
         if not (var_shape[0] == 1 and var_shape[1] == 1):  # not summarying 1x1 conv

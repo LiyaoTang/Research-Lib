@@ -10,7 +10,7 @@ trap "kill 0" EXIT  # crtl-C stop the current & background script
 
 cd ./re3
 
-attention="hard"
+attention="soft"
 bbox_encoding="mask"
 fuse_type="spp"
 
@@ -33,6 +33,8 @@ weight_prefix="preprocess/"
 restore_dir=""
 model_name="re3-${attention}_${bbox_encoding}"
 
+# while ps -e | grep 8132 2> /dev/null; do sleep 3600; done; # polling on process
+
 python re3.py --lrn_rate $lrn_rate \
               --attention $attention \
               --fuse_type $fuse_type \
@@ -46,10 +48,9 @@ python re3.py --lrn_rate $lrn_rate \
               --use_tfdataset $use_tfdataset \
               --run_val $run_val \
               --display $display \
-              --restore_dir "$restore_dir" \
-              --model_name "$model_name" \
-              --weight_prefix "$weight_prefix"
-            # --model_name "re3-mask_lstm512_hard_2019_07_09_00_01_00"
+              --restore_dir "${restore_dir}" \
+              --weight_prefix "${weight_prefix}" \
+              --model_name "${model_name}"
                 # --log ""
                 #  &
                 # --rand_seed ${rand} \
