@@ -11,12 +11,12 @@ import tensorflow as tf
 from . import TF_Ops as tfops
 from . import TF_Modules as tfm
 
-class TF_Constructer(object):
+class TF_Model(object):
     '''
     base class to config TF model with common options
     '''
     def __init__(self, class_num, tf_input, tf_label, tf_phase, config_dict={}):
-        super(TF_Constructer, self).__init__()
+        super(TF_Model, self).__init__()
         
         self.class_num = class_num
         self.tf_input = tf_input
@@ -69,12 +69,12 @@ class TF_Constructer(object):
                 print('%s = %s' % (argn, str(arg)))
 
 
-class FCN_Pipe_Constructer(TF_Constructer):
+class FCN_Pipe(TF_Model):
     '''
     construct a FCN-pipe (FCN with no downsampling) model
     '''
     def __init__(self, conv_struct, class_num, tf_input, tf_label, tf_phase, config_dict={}):
-        super(FCN_Pipe_Constructer, self).__init__(class_num=class_num, tf_input=tf_input, tf_label=tf_label, tf_phase=tf_phase,
+        super(FCN_Pipe, self).__init__(class_num=class_num, tf_input=tf_input, tf_label=tf_label, tf_phase=tf_phase,
                                                    config_dict=config_dict)
 
         # parse conv_struct: e.g. 3-16;5-8;1-32 | 3-8;1-16 | 1
@@ -236,12 +236,12 @@ class FCN_Pipe_Constructer(TF_Constructer):
                 self.merged_summary = tf.summary.merge_all()
 
 
-class Unet_Constructer(FCN_Pipe_Constructer):
+class Unet(FCN_Pipe):
     '''
     construct a FCN-pipe (FCN with no downsampling) model
     '''
     def __init__(self, conv_struct, class_num, tf_input, tf_label, tf_phase, config_dict={}):
-        super(Unet_Constructer, self).__init__(class_num=class_num, tf_input=tf_input, tf_label=tf_label, tf_phase=tf_phase,
+        super(Unet, self).__init__(class_num=class_num, tf_input=tf_input, tf_label=tf_label, tf_phase=tf_phase,
                                                config_dict=config_dict)
         # parse conv_struct: e.g. 3-8;5-8=1-8 | 3-16=1-16 | 3-32=5-8;1-8=3-2
         # => a pipe of inception [ 3x3 out_channel=8, 5x5 out_channel=8 ] -> 1x1 out_channel=8
