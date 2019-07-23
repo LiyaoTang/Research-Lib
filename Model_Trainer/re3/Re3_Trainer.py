@@ -23,8 +23,7 @@ plt.ion()
 
 import Data_Feeder as feeder
 import Model_Analyzer as analyzer
-import Model_Constructer as constructer
-import Model_Constructer.TF_Ops as tfops
+import Models as models
 
 class Re3_Trainer(object):
     def __init__(self, model_name, root_dir, args):
@@ -130,7 +129,7 @@ class Re3_Trainer(object):
             'label_norm': args.label_norm,
             'fuse_type': args.fuse_type,
         }
-        self.tracker = constructer.Re3_Tracker(self.tf_input, self.tf_label, self.tf_prev_state,
+        self.tracker = models.Re3_Tracker(self.tf_input, self.tf_label, self.tf_prev_state,
                                                lstm_size=args.lstm_size, config=tracker_cfg)
         train_cfg = {
             'learning_rate': tf.placeholder(tf.float32) if args.lrn_rate is None else args.lrn_rate,
@@ -160,8 +159,8 @@ class Re3_Trainer(object):
                 tf_input = self.val_placeholders['input']
                 tf_label = self.val_placeholders['label']
                 tf_prev_state = self.val_placeholders['prev_state']
-                self.val_tracker = constructer.Re3_Tracker(tf_input, tf_label, tf_prev_state,
-                                                        lstm_size=args.lstm_size, config=tracker_cfg)
+                self.val_tracker = models.Re3_Tracker(tf_input, tf_label, tf_prev_state,
+                                                      lstm_size=args.lstm_size, config=tracker_cfg)
                 # restore latest ckpt to val model (under scope 'val')
                 val_vars = list(tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=val_scope))
                 restore_dict = dict(zip([v.name.strip(val_scope + '/').split(':')[0] for v in val_vars], val_vars))
@@ -169,8 +168,8 @@ class Re3_Trainer(object):
                 val_cfg = {
                     'summary': {'placeholder': val_rst_placeholders, 'op': summary_op}
                 }
-                self.val_model = constructer.Val_Model(self.sess, self.val_tracker, self.val_feeder, self.val_recorder,
-                                                    var_dict=restore_dict, config=val_cfg)
+                self.val_model = models.Val_Model(self.sess, self.val_tracker, self.val_feeder, self.val_recorder,
+                                                  var_dict=restore_dict, config=val_cfg)
                 self.val_model.inference = lambda x, y: self.tracker.inference(x, y, self.sess)
 
     def _link_feeder_tracker_dependency(self):
@@ -202,7 +201,7 @@ class Re3_Trainer(object):
             else:
                 raise FileNotFoundError
         elif args.restore:
-            self.global_step = tfops.restore_from_dir(self.sess, args.restore_dir)
+            self.global_step = models.tfops.restore_from_dir(self.sess, args.restore_dir)
             args.restore = False  # in case restore from init point again
 
         # finalize
@@ -217,19 +216,19 @@ class Re3_Trainer(object):
                 self.paral_feeder.shutdown()
             self.train_feeder.reset(num_unrolls, batch_size)  # reset dataset
             if args.use_parallel:  # renew parallel utility
-                paral_feeder.refresh(feeder=self.train_feeder)
+                self.paral_feeder.refresh(feeder=self.train_feeder)
             self.data_feeder = self.paral_feeder if args.use_parallel else self.train_feeder
 
             if args.use_tfdataset:  # reconstruct tf graph
                 self.sess.close()
                 tf.reset_default_graph()
-                self.sess = constructer.tfops.Session()  # new sess
+                self.sess = models.tfops.Session()  # new sess
                 self.construct_model()
                 self._link_feeder_tracker_dependency()  # relink with new tracker
                 self._finalize_sess()
 
         else:  # newly construct
-            self.sess = constructer.tfops.Session()
+            self.sess = models.tfops.Session()
             self.construct_feeder(num_unrolls, batch_size)
             self.construct_model()
             self._link_feeder_tracker_dependency()
@@ -381,6 +380,7 @@ class Re3_Trainer(object):
                         self.global_step += 1
                     except:
                         break
+                
             # num_unrolls = 2
             # batch_size = 64
             # while num_unrolls <= 32:

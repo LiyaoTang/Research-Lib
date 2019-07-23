@@ -765,8 +765,6 @@ class Imagenet_VID_Feeder(Feeder):
             self._original_refs = refs
 
         ref_dict = defaultdict(lambda: [])
-        batch = []
-        cur_vid = None
         for idx in range(len(self._original_refs) - self.num_unrolls):
             start = list(self._original_refs[idx][[0, 1, 3]])
             end = list(self._original_refs[idx + self.num_unrolls - 1][[0, 1, 3]])
@@ -912,7 +910,7 @@ class Imagenet_VID_Feeder(Feeder):
         # generate pair of images of time [t, t-1] as net input at time t
         org_ref = self._original_refs[track_ref:track_ref + self.num_unrolls]  # get original_ref for a track
         if np.random.rand() < self.config['use_inference_prob']:
-            return self._get_input_label_from_inference(ref)
+            return self._get_input_label_from_inference(track_ref)
 
         input_seq = []
         label_seq = []
@@ -939,7 +937,7 @@ class Imagenet_VID_Feeder(Feeder):
         # generate mask based on label box of time t-1
         org_ref = self._original_refs[track_ref:track_ref + self.num_unrolls]  # get original_ref for a track
         if np.random.rand() < self.config['use_inference_prob']:
-            return self._get_input_label_from_inference(ref)
+            return self._get_input_label_from_inference(track_ref)
 
         input_seq = []
         label_seq = []

@@ -485,9 +485,8 @@ class Parallel_Feeder(object):
                          'wrapable': False}
 
         self.mp = __import__('multiprocessing', fromlist=[''])
-        self.__config_lock = self.mp.Lock()  # lock for state reading/setting
-        self.__buffer = self.mp.Queue(maxsize=buffer_size)  # buffer for filling data
-        self.__worker = []
+        self.__buffer = None
+        self.__config_lock = None
 
     def _create_worker(self):
         # distribute data_keys to each worker
@@ -501,15 +500,23 @@ class Parallel_Feeder(object):
             w.start()
 
     def shutdown(self):
+        '''
+        stop workers & clean up
+        '''
         for p in self.__worker:
             p.terminate()
         for p in self.__worker:
             p.join()
+
         self.__worker = []
-        self.__buffer.close()
+        if self.__buffer is not None:
+            self.__buffer.close()
         self.__config_lock = None
             
     def refresh(self, feeder=None, config=None):
+        '''
+        clean up & prepare for new workers
+        '''
         self.shutdown()
         if config:
             for k in config:
@@ -518,8 +525,9 @@ class Parallel_Feeder(object):
             self.__feeder = feeder
             self.__data_ref = feeder.data_ref
         # new lock, new queue
-        self.__config_lock = self.mp.Lock()
-        self.__buffer = self.mp.Queue(maxsize=self.__config['buffer_size'])
+        self.__config_lock = self.mp.Lock()  # lock for state reading/setting
+        self.__buffer = self.mp.Queue(maxsize=self.__config['buffer_size'])  # buffer for filling data
+        self.__worker = []
     
     def __del__(self):
         self.shutdown()
@@ -569,6 +577,7 @@ class Parallel_Feeder(object):
         entry for main process: iterate through dataset for once; one batch a time
         '''
         self.__config['wrapable'] = False
+        self.refresh()
         self._create_worker() # workers start runnning
         cnt = 0
         while True:
@@ -590,6 +599,7 @@ class Parallel_Feeder(object):
         entry for main process: create running-forever workers and a handle func to get data
         '''
         self.__config['wrapable'] = True
+        self.refresh()
         self._create_worker()
         while True:
             try:
