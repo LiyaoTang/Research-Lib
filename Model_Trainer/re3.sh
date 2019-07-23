@@ -20,21 +20,43 @@ label_norm="fix"
 unroll_type="dynamic"
 use_inference_prob="-1"
 
-rand_seed="None"
-
 run_val="False"
 worker_num="1"
 buffer_size="2"
 use_parallel="True"
 use_tfdataset="True"
 display="False"
+rand_seed="None"
 
 weight_prefix="preprocess/"
-restore_dir=""
 model_name="re3-${attention}_${bbox_encoding}"
+restore_dir="./Model/${model_name}"
 
 # while ps -e | grep 8132 2> /dev/null; do sleep 3600; done; # polling on process
 
+python re3.py --lrn_rate $lrn_rate \
+              --attention $attention \
+              --fuse_type $fuse_type \
+              --label_type $label_type \
+              --label_norm $label_norm \
+              --unroll_type $unroll_type \
+              --bbox_encoding $bbox_encoding \
+              --use_inference_prob $use_inference_prob \
+              --buffer_size $buffer_size \
+              --use_parallel $use_parallel \
+              --use_tfdataset $use_tfdataset \
+              --run_val $run_val \
+              --display $display \
+              --restore_dir "${restore_dir}" \
+              --weight_prefix "${weight_prefix}" \
+              --model_name "${model_name}"
+                # --log ""
+                #  &
+                # --rand_seed ${rand} \
+
+attention="hard"
+model_name="re3-${attention}_${bbox_encoding}"
+restore_dir="./Model/re3-${attention}_${bbox_encoding}"
 python re3.py --lrn_rate $lrn_rate \
               --attention $attention \
               --fuse_type $fuse_type \

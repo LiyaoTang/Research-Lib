@@ -485,6 +485,7 @@ class Parallel_Feeder(object):
                          'wrapable': False}
 
         self.mp = __import__('multiprocessing', fromlist=[''])
+        self.__worker = []
         self.__buffer = None
         self.__config_lock = None
 
@@ -527,7 +528,6 @@ class Parallel_Feeder(object):
         # new lock, new queue
         self.__config_lock = self.mp.Lock()  # lock for state reading/setting
         self.__buffer = self.mp.Queue(maxsize=self.__config['buffer_size'])  # buffer for filling data
-        self.__worker = []
     
     def __del__(self):
         self.shutdown()

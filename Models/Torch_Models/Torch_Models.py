@@ -1,17 +1,18 @@
 #!/usr/bin/env python
 # coding: utf-8
 '''
-module: base class to construct PyTorch models
+module: classes to construct PyTorch models
 '''
 
 import cv2
 import torch
 import numpy as np
 
-class SiameseTracker(object):
+class Siamese_Tracker(object):
     '''
+    base class for siamese tracker
     '''
-    def get_subwindow(self, img, xy, model_size, original_size, channel_avg):
+    def get_subwindow(self, img, xy, model_size, original_size, channel_avg, gpu_id=0):
         '''
         img: bgr based image
         xy: center position
@@ -60,6 +61,7 @@ class SiameseTracker(object):
         img_patch = img_patch[np.newaxis, :, :, :]
         img_patch = img_patch.astype(np.float32)
         img_patch = torch.from_numpy(img_patch)
-        if cfg.CUDA:
-            img_patch = img_patch.cuda()
-        return im_patch
+        if gpu_id >= 0:
+            with torch.cuda.device(gpu_id):
+                img_patch = img_patch.cuda()
+        return img_patch

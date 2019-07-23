@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 '''
-module: base class to construct TF models
+module: classes to construct TF models
 '''
 
 import types
