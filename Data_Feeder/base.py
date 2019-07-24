@@ -495,6 +495,7 @@ class Parallel_Feeder(object):
         for cnt in range(self.__config['worker_num']):
             start = cnt * ref_segment
             end = start + ref_segment
+            print('creating worker with allocated data num = ', len(self.__data_ref[start:end]))
             self.__worker.append(self.mp.Process(target=self.__fill_buffur, args=(self.__data_ref[start:end],)))
         # start running
         for w in self.__worker:
@@ -589,7 +590,7 @@ class Parallel_Feeder(object):
                 print('timeout when trying to read the %dth data' % cnt)
                 print('current data:\n', data)
                 print('<------------')
-                raise
+                break
             yield data
             if cnt >= len(self.__data_ref):  # finished
                 break
@@ -606,7 +607,7 @@ class Parallel_Feeder(object):
                 data = self.__buffer.get(timeout=timeout)  # potentially blocking
             except:
                 print('------------>')
-                print('timeout when trying to read batch')
+                print('timeout when trying to read')
                 print('<------------')
                 raise
             yield data

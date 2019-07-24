@@ -13,7 +13,7 @@ class Conv_Layer(object):
     callable layer, with options stored as attributes
     '''
     def __init__(self, out_channels, kernel_size, stride=1, num_groups=1, padding='VALID', scope=None,
-                 activation=tf.nn.relu, weights_initializer=None, bias_initializer=None, return_vars=False, summary=False,
+                 activation=tf.nn.relu, weights_initializer=None, bias_initializer=None, return_vars=False,
                  kernel_name='W_conv', bias_name='b_conv'):
         if type(kernel_size) == int:
             kernel_width, self.kernel_height = kernel_size, kernel_size
@@ -43,11 +43,6 @@ class Conv_Layer(object):
         with tf.variable_scope(self.tf_scope):
             self.kernel = tf.get_variable(kernel_name, shape, dtype=tf.float32, initializer=weights_initializer)
             self.bias = tf.get_variable(bias_name, shape, dtype=tf.float32, initializer=bias_initializer)
-            sum_ops = []
-            if summary:
-                with tf.variable_scope('summaries'):
-                    sum_ops = [*tfops.get_conv_summaries(self.kernel, kernel_name), tfops.get_summary(self.bias, bias_name)]
-            self.summary = sum_ops
 
     def __call__(self, input):
         with tf.variable_scope(self.tf_scope):

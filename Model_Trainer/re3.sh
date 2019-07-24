@@ -56,7 +56,7 @@ python re3.py --lrn_rate $lrn_rate \
 
 attention="hard"
 model_name="re3-${attention}_${bbox_encoding}"
-restore_dir="./Model/re3-${attention}_${bbox_encoding}"
+restore_dir="./Model/${model_name}"
 python re3.py --lrn_rate $lrn_rate \
               --attention $attention \
               --fuse_type $fuse_type \

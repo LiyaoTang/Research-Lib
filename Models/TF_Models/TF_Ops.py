@@ -188,7 +188,7 @@ def conv(input, kernel, biases, stride_w, stride_h, padding, num_groups=1):
 
 
 def dense_layer(input, num_channels, activation=tf.nn.relu, weights_initializer=None,
-                bias_initializer=None, return_vars=False, summary=False, weight_name='W_dense', bias_name='b_dense'):
+                bias_initializer=None, return_vars=False, weight_name='W_dense', bias_name='b_dense'):
     if weights_initializer is None:
         # TF 2.0: tf.initializers.GlorotUniform()
         weights_initializer = tf.contrib.layers.xavier_initializer()
@@ -201,9 +201,6 @@ def dense_layer(input, num_channels, activation=tf.nn.relu, weights_initializer=
     input_channels = input.get_shape().as_list()[1]
     W_dense = tf.get_variable(weight_name, [input_channels, num_channels], dtype=tf.float32, initializer=weights_initializer)
     b_dense = tf.get_variable(bias_name, [num_channels], dtype=tf.float32, initializer=bias_initializer)
-    if summary:  # get into default graph
-        get_summary(W_dense, scope='summaries/W')
-        get_summary(b_dense, scope='summaries/bias')
     dense_out = tf.matmul(input, W_dense) + b_dense
     if activation is not None:
         dense_out = activation(dense_out)
@@ -213,7 +210,7 @@ def dense_layer(input, num_channels, activation=tf.nn.relu, weights_initializer=
         return dense_out
 
 def conv_layer(input, out_channels, filter_size, stride=1, num_groups=1, padding='VALID', scope=None,
-               activation=tf.nn.relu, weights_initializer=None, bias_initializer=None, return_vars=False, summary=False):
+               activation=tf.nn.relu, weights_initializer=None, bias_initializer=None, return_vars=False):
     if type(filter_size) == int:
         filter_width = filter_size
         filter_height = filter_size
@@ -235,13 +232,10 @@ def conv_layer(input, out_channels, filter_size, stride=1, num_groups=1, padding
     if bias_initializer is None:
         bias_initializer = tf.zeros_initializer()
 
-    shape = [filter_width, filter_height, input.get_shape().as_list()[3] / num_groups, out_channels]
+    kernel_shape = [filter_width, filter_height, input.get_shape().as_list()[3] / num_groups, out_channels]
     with cond_scope(scope):
-        W_conv = tf.get_variable('W_conv', shape, dtype=tf.float32, initializer=weights_initializer)
-        b_conv = tf.get_variable('b_conv', shape, dtype=tf.float32, initializer=bias_initializer)
-        if summary:  # get into default graph
-            get_conv_summaries(W_conv, scope='summaries/conv')
-            get_summary(b_conv, scope='summaries/bias')
+        W_conv = tf.get_variable('W_conv', kernel_shape, dtype=tf.float32, initializer=weights_initializer)
+        b_conv = tf.get_variable('b_conv', [out_channels], dtype=tf.float32, initializer=bias_initializer)
         conv_out = conv(input, W_conv, b_conv, stride_width, stride_height, padding, num_groups)
         if activation is not None:
             conv_out = activation(conv_out)

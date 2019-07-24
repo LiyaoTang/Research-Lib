@@ -62,6 +62,7 @@ class Re3_Trainer(object):
         train_ref = os.path.join(data_ref_dir, 'train_label.npy') 
         train_feeder = feeder.Imagenet_VID_Feeder(train_ref, class_num=30, num_unrolls=num_unrolls, batch_size=batch_size, config=feeder_cfg)
         self.train_feeder = train_feeder
+        print('total data num = ', len(train_feeder.data_ref))
 
         if args.run_val:
             feeder_cfg['data_split'] = 'val'
@@ -372,8 +373,9 @@ class Re3_Trainer(object):
             self.train_step = self.tracker.train_step
             feed_dict = {}
             print('training prepared')
-            for _ in range(epoch):
+            for ep_cnt in range(epoch):
                 self.sess.run(self.tf_dataset_iter.initializer)
+                print('starting epoch', ep_cnt)
                 while True:
                     try:
                         self.run_train_step(feed_dict, self.global_step, args.display)
@@ -401,7 +403,6 @@ class Re3_Trainer(object):
             if self.paral_feeder is not None:
                 self.paral_feeder.shutdown()
             if not args.debug:
-                print('saving...')
-                checkpoint_file = os.path.join(args.log_dir, 'checkpoints', 'model.ckpt')
-                self.saver.save(self.sess, checkpoint_file, global_step=self.global_step)
+                print('saving on unexpected termination...')
+                self.saver.save(self.sess, self.ckpt_path, global_step=self.global_step)
             raise
