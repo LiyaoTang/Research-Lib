@@ -71,7 +71,7 @@ class Re3_Trainer(object):
             self.val_feeder = val_feeder
 
         if args.use_parallel:
-            data_feeder = feeder.Parallel_Feeder(train_feeder, buffer_size=args.buffer_size, worker_num=args.worker_num)
+            data_feeder = feeder.Parallel_Feeder(train_feeder, buffer_size=args.buffer_size, worker_num=args.worker_num, verbose=True)
             self.paral_feeder = data_feeder
         else:
             data_feeder = train_feeder

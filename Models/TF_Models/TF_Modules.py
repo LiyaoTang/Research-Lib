@@ -154,7 +154,7 @@ def re3_lstm_tracker(input, num_unrolls, batch_size, prev_state=None, lstm_size=
 
     # final dense layer.
     with tf.variable_scope('fc_output'):
-        fc_output = tfops.dense_layer(flatten_out, 4, activation=None, name='fc')  # [batch x time, 4]
+        fc_output = tfops.dense_layer(flatten_out, 4, activation=None, weight_name='W_fc', bias_name='b_fc')  # [batch x time, 4]
         fc_output = tf.reshape(fc_output, [-1, num_unrolls, 4])  #  [batch, time, 4]
 
     return fc_output, (state1, state2)

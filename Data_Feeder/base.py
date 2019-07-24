@@ -472,7 +472,7 @@ class Parallel_Feeder(object):
     construct a parallel py-process to load data: enable loading-training pipeline
     warning: should NOT modify passed in feeder afterwards
     '''
-    def __init__(self, feeder, buffer_size=5, worker_num=1):
+    def __init__(self, feeder, buffer_size=5, worker_num=1, verbose=False):
         super(Parallel_Feeder, self).__init__()
 
         assert isinstance(feeder, Feeder)  # a data feeder with mapping: key -> input-label
@@ -483,6 +483,7 @@ class Parallel_Feeder(object):
                          'buffer_size': buffer_size,
                          'worker_num': worker_num,
                          'wrapable': False}
+        self.verbose = verbose
 
         self.mp = __import__('multiprocessing', fromlist=[''])
         self.__worker = []
@@ -495,7 +496,8 @@ class Parallel_Feeder(object):
         for cnt in range(self.__config['worker_num']):
             start = cnt * ref_segment
             end = start + ref_segment
-            print('creating worker with allocated data num = ', len(self.__data_ref[start:end]))
+            if self.verbose:
+                print('creating worker with allocated data num = ', len(self.__data_ref[start:end]))
             self.__worker.append(self.mp.Process(target=self.__fill_buffur, args=(self.__data_ref[start:end],)))
         # start running
         for w in self.__worker:
@@ -588,7 +590,8 @@ class Parallel_Feeder(object):
             except:
                 print('------------>')
                 print('timeout when trying to read the %dth data' % cnt)
-                print('current data:\n', data)
+                if self.verbose:
+                    print('current data:\n', data)
                 print('<------------')
                 break
             yield data
