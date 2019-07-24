@@ -58,7 +58,7 @@ def alexnet_conv_layers(input, auxilary_input=None, prelu_initializer=tf.constan
             conv1 = tf.nn.relu(conv1)
         else:
             conv1 = tfops.conv_layer(input, 96, filter_size=11, stride=4, padding='VALID')
-        pool1 = tf.nn.max_pool(conv1, ksize=[1, 3, 3, 1], strides=[1, 2, 2, 1], padding='VALID', name='pool1')
+        pool1 = tf.nn.max_pool2d(conv1, ksize=[1, 3, 3, 1], strides=[1, 2, 2, 1], padding='VALID', name='pool1')
         lrn1 = tf.nn.local_response_normalization(pool1, depth_radius=2, alpha=2e-5, beta=0.75, bias=1.0, name='norm1')
 
     with tf.variable_scope('conv1_skip'):
@@ -70,7 +70,7 @@ def alexnet_conv_layers(input, auxilary_input=None, prelu_initializer=tf.constan
     with tf.variable_scope('conv2'):
         # 2-branch by num_groups=2
         conv2 = tfops.conv_layer(lrn1, 256, filter_size=5, num_groups=2, padding='SAME')
-        pool2 = tf.nn.max_pool(conv2, ksize=[1, 3, 3, 1], strides=[1, 2, 2, 1], padding='VALID', name='pool2')
+        pool2 = tf.nn.max_pool2d(conv2, ksize=[1, 3, 3, 1], strides=[1, 2, 2, 1], padding='VALID', name='pool2')
         lrn2 = tf.nn.local_response_normalization(pool2, depth_radius=2, alpha=2e-5, beta=0.75, bias=1.0, name='norm2')
 
     with tf.variable_scope('conv2_skip'):
@@ -87,7 +87,7 @@ def alexnet_conv_layers(input, auxilary_input=None, prelu_initializer=tf.constan
 
     with tf.variable_scope('conv5'):
         conv5 = tfops.conv_layer(conv4, 256, filter_size=3, num_groups=2, padding='SAME')
-        pool5 = tf.nn.max_pool(conv5, ksize=[1, 3, 3, 1], strides=[1, 2, 2, 1], padding='VALID', name='pool5')
+        pool5 = tf.nn.max_pool2d(conv5, ksize=[1, 3, 3, 1], strides=[1, 2, 2, 1], padding='VALID', name='pool5')
         if fuse_type == 'flat':
             pool5_flat = flatten(pool5)
 

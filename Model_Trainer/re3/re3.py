@@ -96,6 +96,7 @@ if args.log_dir:
     log_file_path = os.path.join(args.log_dir, args.model_name)
     log_file = open(log_file_path, 'w')
     sys.stdout = log_file
+    sys.stderr = log_file  # redirect runtime warining/error as well
     print(args.model_name)
 else:
     log_file = ''
