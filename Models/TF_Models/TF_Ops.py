@@ -209,7 +209,7 @@ def dense_layer(input, num_channels, activation=tf.nn.relu, weights_initializer=
     else:
         return dense_out
 
-def conv_layer(input, out_channels, filter_size, stride=1, num_groups=1, padding='VALID', scope=None,
+def conv_layer(input, out_channels, filter_size, stride=1, num_groups=1, padding='VALID', scope='',
                activation=tf.nn.relu, weights_initializer=None, bias_initializer=None, return_vars=False):
     if type(filter_size) == int:
         filter_width = filter_size
@@ -233,7 +233,7 @@ def conv_layer(input, out_channels, filter_size, stride=1, num_groups=1, padding
         bias_initializer = tf.zeros_initializer()
 
     kernel_shape = [filter_width, filter_height, input.get_shape().as_list()[3] / num_groups, out_channels]
-    with cond_scope(scope):
+    with tf.variable_scope(scope):
         W_conv = tf.get_variable('W_conv', kernel_shape, dtype=tf.float32, initializer=weights_initializer)
         b_conv = tf.get_variable('b_conv', [out_channels], dtype=tf.float32, initializer=bias_initializer)
         conv_out = conv(input, W_conv, b_conv, stride_width, stride_height, padding, num_groups)
@@ -431,21 +431,6 @@ def kernel_to_image(data, padsize=1, padval=0):
     return tf.image.convert_image_dtype(data, dtype=tf.uint8)
 
 
-class empty_scope():
-    def __init__(self):
-        pass
-
-    def __enter__(self):
-        pass
-
-    def __exit__(self, type, value, traceback):
-        pass
-
-
-def cond_scope(scope):
-    return empty_scope() if scope is None else tf.variable_scope(scope)
-
-
 def get_summary(var, scope='summaries'):
     # Some useful stats for variables.
     with tf.variable_scope(scope):
@@ -459,7 +444,7 @@ def get_summary(var, scope='summaries'):
 def get_conv_summaries(var, scope='summaries'):
     # Useful stats for variables and the kernel images.
     with tf.variable_scope(scope):
-        sum_ops = [get_summary(var, empty_scope())]
+        sum_ops = [get_summary(var, '')]  # empty scope
         var_shape = var.get_shape().as_list()
         if not (var_shape[0] == 1 and var_shape[1] == 1):  # not summarying 1x1 conv
             if var_shape[2] < 3:
