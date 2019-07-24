@@ -89,47 +89,6 @@ class FCN_Pipe(TF_Model):
 
         assert self.config['loss_type'] in ['crf', 'xen']
         self._build_graph()
-
-    def _build_graph(self):
-        self._build_pipe()
-        self._build_logits()
-        self._build_loss()
-        self._build_output()
-        # for n in tf.get_default_graph().as_graph_def().node:
-        #     print(n.name)
-        # print('=================================================================================')
-        if self.config['record_summary']:
-            self._build_summary()
-        
-    def _build_pipe(self, net=None, conv_struct=None, scope='pipe'):
-        with tf.variable_scope(scope):
-            # hidden layer
-            if net is None:
-                net = self.net
-            if conv_struct is None:
-                conv_struct = self.conv_struct
-            if len(conv_struct) > 1: # if any hidden layer
-                for layer_cnt in range(len(conv_struct) - 1):
-                    layer_cfg = conv_struct[layer_cnt]
-
-                    with tf.variable_scope('incep_%d' % layer_cnt):
-                        # kernel/bias initializer: default to xavier/zeros
-                        if len(layer_cfg) > 1:
-                            net = tf.concat([tf.layers.conv2d(inputs=net, kernel_size=cfg[0], filters=cfg[1], padding='same',
-                                                              activation=tf.nn.relu, kernel_regularizer=self.config['regularizer'],
-                                                              name='conv%d-%d' % (cfg[0], cfg[1]))
-                                            for cfg in layer_cfg], axis=-1)
-                        else:
-                            cfg = layer_cfg[0]
-                            net = tf.layers.conv2d(inputs=net, kernel_size=cfg[0], filters=cfg[1], strides=1, padding='same',
-                                                   activation=tf.nn.relu, kernel_regularizer=self.config['regularizer'],
-                                                   name='conv%d-%d' % (cfg[0], cfg[1]))
-
-                        # If anyone has come across any instances where BN before ReLU does better than BN after ReLU, 
-                        # please do share with me as I have yet to come across any such instance.
-                        if self.config['batchnorm']:
-                            net = tf.layers.batch_normalization(net, training=tf.equal(self.tf_phase, 'train'), name='bn')
-        self.net = net
         
     def _build_logits(self):
         # logits
@@ -184,56 +143,6 @@ class FCN_Pipe(TF_Model):
         update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
         with tf.control_dependencies(update_ops):
             self.train_step = tf.train.AdamOptimizer(self.config['learning_rate']).minimize(self.loss['train'])
-
-    def _build_output(self):
-        # output
-        with tf.variable_scope('pred'):
-            if self.config['loss_type'] == 'crf':
-                batch_shape = tf.shape(self.logits)
-                batch_size = batch_shape[0]
-                batch_exp_len = tf.reduce_prod(batch_shape[1:-1])
-                flat_logits = tf.reshape(self.logits, (batch_size, batch_exp_len, self.class_num))
-
-                # decoded into [batch_size, seq_len] with k-class encoding
-                prediction, sentence_scores = tf.contrib.crf.crf_decode(flat_logits,
-                                                                        self.trans_params,
-                                                                        tf.fill([batch_size],
-                                                                                batch_exp_len))
-                onehot_pred = tf.one_hot(prediction, self.class_num, axis=-1)
-                self.pred = tf.reshape(onehot_pred, tf.shape(self.logits), name='pred')
-            else:
-                self.pred = tf.nn.softmax(self.logits, name='pred')
-
-    def _build_summary(self):
-        if self.config['record_summary']:
-            with tf.variable_scope('summary'):
-                conv_struct = self.conv_struct
-
-                target_tensors = []
-                # conv layers params
-                if conv_struct != [[[0]]]:
-                    for layer_cnt in range(len(conv_struct) - 1):
-                        layer_cfg = conv_struct[layer_cnt]
-
-                        for cfg in layer_cfg:
-                            target_tensors.extend(['pipe/incep_%d/conv%d-%d/%s' % (layer_cnt, cfg[0], cfg[1], t) for t in ['kernel:0', 'bias:0']])
-                        if self.config['batchnorm']:
-                            target_tensors.extend(['pipe/incep_%d/bn/%s' % (layer_cnt, t) for t in ['gamma:0', 'beta:0']])
-                # logits layer params
-                target_tensors.extend(['logits/%s' % t for t in ['kernel:0', 'bias:0']])
-
-                graph = tf.get_default_graph()
-                for tensor_name in target_tensors:
-                    cur_tensor = graph.get_tensor_by_name(tensor_name)
-                    tensor_name = tensor_name.split(':')[0]
-                    tf.summary.histogram(tensor_name, cur_tensor)
-                    tf.summary.histogram('grad_'+tensor_name, tf.gradients(self.loss['train'], [cur_tensor])[0])
-
-                # loss
-                tf.summary.scalar('train_loss', self.loss['train'])
-                tf.summary.scalar('val_loss', self.loss['val'])
-
-                self.merged_summary = tf.summary.merge_all()
 
 
 class Unet(FCN_Pipe):
@@ -485,7 +394,7 @@ class Re3_Tracker(object):
                 feat_len = self.net.get_shape().as_list()[-1]
                 self.net = tf.reshape(self.net, [-1, feat_len])
                 feat_len = 1024
-                self.net = tfops.dense_layer(self.net, feat_len, name='fc')  # [-1,feat=1024]
+                self.net = tfops.dense_layer(self.net, feat_len, weight_name='W_fc', bias_name='b_fc')  # [-1,feat=1024]
                 self.net = tf.reshape(self.net, [-1, num_unrolls, feat_len]) # [batch, time, feat=1024]
 
             if self.config['unroll_type'] == 'manual':
@@ -532,12 +441,12 @@ class Re3_Tracker(object):
 
             conv_vars = [v for v in var_list if 'conv' in v.name and 'W_conv' in v.name and
                          (v.get_shape().as_list()[0] != 1 or v.get_shape().as_list()[1] != 1)]
-            conv_summary = [tfops.conv_variable_summaries(var, scope=var.name.replace('/', '_')[:-2]) for var in conv_vars]
+            conv_summary = [tfops.get_conv_summaries(var, scope=var.name.replace('/', '_')[:-2]) for var in conv_vars]
             conv_summary = [s for s in conv_summary if s is not None]
             self.summary['conv'] = tf.summary.merge(conv_summary) if conv_summary else None
 
             lstm_vars = [var for var in var_list if 'lstm1' in var.name or 'lstm2' in var.name]
-            lstm_summary = [tfops.variable_summaries(var, var.name[:-2]) for var in lstm_vars]
+            lstm_summary = [tfops.get_summary(var, var.name[:-2]) for var in lstm_vars]
             self.summary['lstm'] = tf.summary.merge(lstm_summary) if lstm_summary else None
         self.summary['all'] = tf.summary.merge_all()
         print(self.summary)

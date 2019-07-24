@@ -7,6 +7,7 @@ module: some self-constructed tf ops
 import os
 import numpy as np
 import tensorflow as tf
+
 from tensorflow.python.framework import ops
 from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import array_ops
@@ -43,10 +44,11 @@ def leaky_relu(input, slope=0.01, name='lrelu'):
         return tf.nn.relu(input) - slope * tf.nn.relu(-input)
 
 
-def prelu(input, weights=None, initializer=tf.constant_initializer(0.25), scope='prelu', name='prelu'):
+def prelu(input, weights=None, initializer=tf.constant_initializer(0.25), name='prelu'):
     # tf 2.0: tf.keras.layers.PReLU(): sharing parameter inside layer
     if weights is None:
-        weights = get_variable(name, shape=[input.get_shape().as_list()[-1]], initializer=initializer)
+        weights = tf.get_variable(name, shape=[input.get_shape().as_list()[-1]], dtype=tf.float32, initializer=initializer)
+        get_summary(weights, name)  # get into default graph
     with tf.variable_scope(name):
         return tf.nn.relu(input) - weights * tf.nn.relu(-input)
 
@@ -186,7 +188,7 @@ def conv(input, kernel, biases, stride_w, stride_h, padding, num_groups=1):
 
 
 def dense_layer(input, num_channels, activation=tf.nn.relu, weights_initializer=None,
-                bias_initializer=None, return_vars=False, summary=True, name='dense'):
+                bias_initializer=None, return_vars=False, summary=False, weight_name='W_dense', bias_name='b_dense'):
     if weights_initializer is None:
         # TF 2.0: tf.initializers.GlorotUniform()
         weights_initializer = tf.contrib.layers.xavier_initializer()
@@ -197,8 +199,11 @@ def dense_layer(input, num_channels, activation=tf.nn.relu, weights_initializer=
         input = tf.reshape(input, [-1, np.prod(input_shape[1:])])
         input_shape = input.get_shape().as_list()
     input_channels = input.get_shape().as_list()[1]
-    W_dense = get_variable('W_'+name, [input_channels, num_channels], initializer=weights_initializer, summary=summary)
-    b_dense = get_variable('b_'+name, [num_channels], initializer=bias_initializer, summary=summary)
+    W_dense = tf.get_variable(weight_name, [input_channels, num_channels], dtype=tf.float32, initializer=weights_initializer)
+    b_dense = tf.get_variable(bias_name, [num_channels], dtype=tf.float32, initializer=bias_initializer)
+    if summary:  # get into default graph
+        get_summary(W_dense, scope='summaries/W')
+        get_summary(b_dense, scope='summaries/bias')
     dense_out = tf.matmul(input, W_dense) + b_dense
     if activation is not None:
         dense_out = activation(dense_out)
@@ -206,7 +211,6 @@ def dense_layer(input, num_channels, activation=tf.nn.relu, weights_initializer=
         return dense_out, W_dense, b_dense
     else:
         return dense_out
-
 
 def conv_layer(input, out_channels, filter_size, stride=1, num_groups=1, padding='VALID', scope=None,
                activation=tf.nn.relu, weights_initializer=None, bias_initializer=None, return_vars=False, summary=False):
@@ -226,27 +230,27 @@ def conv_layer(input, out_channels, filter_size, stride=1, num_groups=1, padding
         raise Exception('stride is not int or tuple')
 
     if weights_initializer is None:
-        # equivalent to TF 1.0+ - tf.contrib.layers.xavier_initializer()
+        # equivalent to TF 1.0+ tf.contrib.layers.xavier_initializer()
         weights_initializer = tf.glorot_uniform_initializer()
     if bias_initializer is None:
         bias_initializer = tf.zeros_initializer()
 
     shape = [filter_width, filter_height, input.get_shape().as_list()[3] / num_groups, out_channels]
     with cond_scope(scope):
-        W_conv = get_variable('W_conv', shape, initializer=weights_initializer, summary=summary)
-        b_conv = get_variable('b_conv', [out_channels], initializer=bias_initializer, summary=summary)
-        if summary:
-            w_summary = conv_variable_summaries(W_conv)
+        W_conv = tf.get_variable('W_conv', shape, dtype=tf.float32, initializer=weights_initializer)
+        b_conv = tf.get_variable('b_conv', shape, dtype=tf.float32, initializer=bias_initializer)
+        if summary:  # get into default graph
+            get_conv_summaries(W_conv, scope='summaries/conv')
+            get_summary(b_conv, scope='summaries/bias')
         conv_out = conv(input, W_conv, b_conv, stride_width, stride_height, padding, num_groups)
         if activation is not None:
             conv_out = activation(conv_out)
 
-        rtn = tuple([conv_out])
-        if return_vars:
-            rtn += (W_conv, b_conv)
-        if summary:
-            rtn += (w_summary)
-        return rtn[0] if len(rtn) == 1 else rtn
+    rtn = [conv_out]
+    if return_vars:
+        rtn += [W_conv, b_conv]
+    rtn = tuple(rtn)
+    return rtn[0] if len(rtn) == 1 else rtn
 
 def rnn_gru_layer(input, rnn_size, batch_size, num_unrolls, bi_direct=False):
     '''
@@ -448,10 +452,8 @@ def cond_scope(scope):
     return empty_scope() if scope is None else tf.variable_scope(scope)
 
 
-def variable_summaries(var, scope=''):
+def get_summary(var, scope='summaries'):
     # Some useful stats for variables.
-    cur_scope = tf.get_variable_scope().name
-    scope = 'summaries/' + scope if cur_scope == '' else scope  # not prepend 'summaries' if already in 'summaries' scope
     with tf.variable_scope(scope):
         mean = tf.reduce_mean(var)
         with tf.device('/cpu:0'):
@@ -460,17 +462,11 @@ def variable_summaries(var, scope=''):
     return sum_op
 
 
-def conv_variable_summaries(var, scope=''):
+def get_conv_summaries(var, scope='summaries'):
     # Useful stats for variables and the kernel images.
-    variable_summaries(var, scope)
-    if len(scope) > 0:
-        scope = 'conv/' + scope
-    cur_scope = tf.get_variable_scope().name
-    scope = 'summaries/' + scope if cur_scope == '' else scope  # not prepend 'summaries' if already in 'summaries' scope
-
     with tf.variable_scope(scope):
+        sum_ops = [get_summary(var, empty_scope())]
         var_shape = var.get_shape().as_list()
-        sum_op = None
         if not (var_shape[0] == 1 and var_shape[1] == 1):  # not summarying 1x1 conv
             if var_shape[2] < 3:
                 var = tf.tile(var, [1, 1, 3, 1])
@@ -480,16 +476,6 @@ def conv_variable_summaries(var, scope=''):
             kernel_img = kernel_to_image(var_slice)
             summary_image = tf.expand_dims(kernel_img, 0)
             with tf.device('/cpu:0'):
-                sum_op = tf.summary.image('filters', summary_image)
-            return sum_op
-    return sum_op
-
-
-'''variable'''
-
-
-def get_variable(name, shape, dtype=tf.float32, initializer=None, summary=True):
-    var = tf.get_variable(name, shape, dtype=dtype, initializer=initializer)
-    if summary:
-        variable_summaries(var, name)
-    return var
+                kernel_sum_op = tf.summary.image('filters', summary_image)
+            sum_ops.append(kernel_sum_op)
+    return sum_ops
