@@ -132,6 +132,7 @@ class Re3_Trainer(object):
         }
         self.tracker = models.Re3_Tracker(self.tf_input, self.tf_label, self.tf_prev_state,
                                                lstm_size=args.lstm_size, config=tracker_cfg)
+        print('all trainable variable\n', '\n'.join(sorted([v.name for v in tf.trainable_variables()])))
         train_cfg = {
             'learning_rate': tf.placeholder(tf.float32) if args.lrn_rate is None else args.lrn_rate,
             'var_list': [v for v in tf.trainable_variables() if v.name.startswith(args.weight_prefix)]

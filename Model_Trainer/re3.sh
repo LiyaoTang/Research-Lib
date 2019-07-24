@@ -49,31 +49,31 @@ python re3.py --lrn_rate $lrn_rate \
               --display $display \
               --restore_dir "${restore_dir}" \
               --weight_prefix "${weight_prefix}" \
-              --model_name "${model_name}"
-                # --log ""
+              --model_name "${model_name}" \
+                --log ""
                 #  &
                 # --rand_seed ${rand} \
 
-attention="hard"
-model_name="re3-${attention}_${bbox_encoding}"
-restore_dir="./Model/${model_name}"
-python re3.py --lrn_rate $lrn_rate \
-              --attention $attention \
-              --fuse_type $fuse_type \
-              --label_type $label_type \
-              --label_norm $label_norm \
-              --unroll_type $unroll_type \
-              --bbox_encoding $bbox_encoding \
-              --use_inference_prob $use_inference_prob \
-              --buffer_size $buffer_size \
-              --use_parallel $use_parallel \
-              --use_tfdataset $use_tfdataset \
-              --run_val $run_val \
-              --display $display \
-              --restore_dir "${restore_dir}" \
-              --weight_prefix "${weight_prefix}" \
-              --model_name "${model_name}"
-                # --log ""
-                #  &
-                # --rand_seed ${rand} \
+# attention="hard"
+# model_name="re3-${attention}_${bbox_encoding}"
+# restore_dir="./Model/${model_name}"
+# python re3.py --lrn_rate $lrn_rate \
+#               --attention $attention \
+#               --fuse_type $fuse_type \
+#               --label_type $label_type \
+#               --label_norm $label_norm \
+#               --unroll_type $unroll_type \
+#               --bbox_encoding $bbox_encoding \
+#               --use_inference_prob $use_inference_prob \
+#               --buffer_size $buffer_size \
+#               --use_parallel $use_parallel \
+#               --use_tfdataset $use_tfdataset \
+#               --run_val $run_val \
+#               --display $display \
+#               --restore_dir "${restore_dir}" \
+#               --weight_prefix "${weight_prefix}" \
+#               --model_name "${model_name}"
+#                 # --log ""
+#                 #  &
+#                 # --rand_seed ${rand} \
 wait
