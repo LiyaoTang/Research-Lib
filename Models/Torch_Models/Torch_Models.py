@@ -7,6 +7,13 @@ module: classes to construct PyTorch models
 import cv2
 import torch
 import numpy as np
+import torch.nn.functional as F
+
+from . import Torch_Modules as torch_modules
+
+
+''' Siamese Trackers '''
+
 
 class Siamese_Tracker(object):
     '''
@@ -42,7 +49,7 @@ class Siamese_Tracker(object):
         if any([top_pad, bottom_pad, left_pad, right_pad]):
             size = (r + top_pad + bottom_pad, c + left_pad + right_pad, k)
             te_im = np.zeros(size, np.uint8)
-            te_im[top_pad:top_pad + r, left_pad:left_pad + c, :] = img
+            te_im[top_pad: top_pad + r, left_pad:left_pad + c, :] = img
             if top_pad:
                 te_im[0:top_pad, left_pad:left_pad + c, :] = channel_avg
             if bottom_pad:

@@ -14,7 +14,7 @@ from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import gen_nn_ops
 
 
-'''reshaping'''
+''' reshaping '''
 
 
 def remove_axis_get_shape(curr_shape, axis):
@@ -36,7 +36,7 @@ def remove_axis(input, axis):
     return tf.reshape(input, tf.stack(new_shape))
 
 
-'''activation'''
+''' activation '''
 
 
 def leaky_relu(input, slope=0.01, name='lrelu'):
@@ -53,7 +53,7 @@ def prelu(input, weights=None, initializer=tf.constant_initializer(0.25), name='
         return tf.nn.relu(input) - weights * tf.nn.relu(-input)
 
 
-'''pooling'''
+''' pooling '''
 
 
 def unpooling(input, before_pool, padding, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], name=None, data_format="NHWC"):
@@ -166,7 +166,7 @@ def spatial_pyramid_pooling(input, bin_dimensions, pooling_mode='max', scope='sp
     return concat[0]
 
 
-'''operation'''
+''' operation '''
 
 
 def conv(input, kernel, biases, stride_w, stride_h, padding, num_groups=1):

@@ -43,6 +43,7 @@ def fcn_pipe(input, conv_struct, use_batchnorm=False, is_training=None, scope='p
 
 def alexnet_conv_layers(input, auxilary_input=None, prelu_initializer=tf.constant_initializer(0.25), fuse_type='flat'):
     '''
+    self-implemented AlexNet, with skip-connection
     input: images, expected to be of [batch, width, height, channel]
     '''
     def flatten(feat_map):
