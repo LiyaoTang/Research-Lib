@@ -21,8 +21,8 @@ class Img_from_Record_Feeder(TFRecord_Feeder):
     '''
     def __init__(self, data_path, img_shape_3D=(1024, 448, 8), label_shape_3D=(1024, 448, 4),
                  meta_data_file=None, norm_type='', use_sparse=False,
-                 features_dict={'image_raw': tf.FixedLenFeature([], tf.string),
-                                'label_raw': tf.FixedLenFeature([], tf.string)}):
+                 features_dict={'image_raw': tf.io.FixedLenFeature([], tf.string),
+                                'label_raw': tf.io.FixedLenFeature([], tf.string)}):
 
         super(Img_from_Record_Feeder, self).__init__(data_path, features_dict)
         self.img_shape_3D = tuple(img_shape_3D)
