@@ -40,12 +40,12 @@ class Conv_Layer(object):
             bias_initializer = tf.zeros_initializer()    
 
         shape = [kernel_width, kernel_height, input.get_shape().as_list()[3] / num_groups, out_channels]
-        with tf.variable_scope(self.tf_scope):
+        with tfops.var_scope(self.tf_scope):
             self.kernel = tf.get_variable(kernel_name, shape, dtype=tf.float32, initializer=weights_initializer)
             self.bias = tf.get_variable(bias_name, shape, dtype=tf.float32, initializer=bias_initializer)
 
     def __call__(self, input):
-        with tf.variable_scope(self.tf_scope):
+        with tfops.var_scope(self.tf_scope):
             conv_out = tfops.conv(input, self.kernel, self.bias, self.stride_width, self.stride_height, self.padding, self.num_groups)
             if self.activation is not None:
                 conv_out = self.activation(conv_out)

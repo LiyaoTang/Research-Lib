@@ -137,7 +137,7 @@ class Re3_Trainer(object):
             'learning_rate': tf.placeholder(tf.float32) if args.lrn_rate is None else args.lrn_rate,
             'var_list': [v for v in tf.trainable_variables() if v.name.startswith(args.weight_prefix)]
         }
-        print(train_cfg)
+        print('train_cfg:\n', train_cfg)
         self.tracker.build_train_step(config=train_cfg)
         summary_cfg = {
             'var_list': [v for v in tf.trainable_variables() if v.name.startswith(args.weight_prefix) or 'conv1' in v.name]
@@ -325,7 +325,8 @@ class Re3_Trainer(object):
             self.prepare_train(num_unrolls, batch_size, dummy_summary=True)
             self.train_step = self.tracker.train_step
             print('training prepared')
-            for ep in range(epoch):
+            for ep_cnt in range(epoch):
+                print('starting epoch', ep_cnt)
                 for input_batch, label_batch in self.data_feeder.iterate_data():
                     feed_dict = {
                         self.tracker.tf_input: input_batch,

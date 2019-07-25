@@ -199,7 +199,7 @@ def dense_layer(input, num_channels, activation=tf.nn.relu, weights_initializer=
         input = tf.reshape(input, [-1, np.prod(input_shape[1:])])
         input_shape = input.get_shape().as_list()
     input_channels = input.get_shape().as_list()[1]
-    with tf.variable_scope(scope) if scope else empty_scope():
+    with var_scope(scope):
         W_dense = tf.get_variable(weight_name, [input_channels, num_channels], dtype=tf.float32, initializer=weights_initializer)
         b_dense = tf.get_variable(bias_name, [num_channels], dtype=tf.float32, initializer=bias_initializer)
         dense_out = tf.matmul(input, W_dense) + b_dense
@@ -234,7 +234,7 @@ def conv_layer(input, out_channels, filter_size, stride=1, num_groups=1, padding
         bias_initializer = tf.zeros_initializer()
 
     kernel_shape = [filter_width, filter_height, input.get_shape().as_list()[3] / num_groups, out_channels]
-    with tf.variable_scope(scope) if scope else empty_scope():
+    with var_scope(scope):
         W_conv = tf.get_variable('W_conv', kernel_shape, dtype=tf.float32, initializer=weights_initializer)
         b_conv = tf.get_variable('b_conv', [out_channels], dtype=tf.float32, initializer=bias_initializer)
         conv_out = conv(input, W_conv, b_conv, stride_width, stride_height, padding, num_groups)
@@ -389,12 +389,19 @@ def restore_from_dir(sess, folder_path, raise_if_not_found=False):
 
 
 class empty_scope():
+    '''
+    empty py scope for 'with' statement
+    '''
     def __init__(self):
         pass
     def __enter__(self):
         pass
     def __exit__(self, type, value, traceback):
         pass
+
+def var_scope(scope):  # guarding for valid tf scope
+    return tf.variable_scope(scope) if scope else empty_scope()
+
 
 ''' session '''
 
