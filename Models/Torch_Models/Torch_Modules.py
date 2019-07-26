@@ -15,9 +15,14 @@ from . import Torch_Layers as torch_layers
 
 class AlexNet(nn.Module):
     '''
-    self-implemented AlexNet
-    careful with: conv stride, group num, batch- vs. lrn-norm, pooling, relu vs. prelu
+    moddified AlexNet where, 
+        reduced conv stride & pooling => better spatial resolution for tracking
+        removed group in conv2 & conv4 => more parameters
+        batchnorm => believed to be better than lrn-norm
+
+    width_mult: to double the channel (used in SiamRPN)
     '''
+
     def __init__(self, width_mult=1, auxilary_loss=None):
         super(AlexNet, self).__init__()
 
