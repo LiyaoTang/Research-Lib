@@ -12,6 +12,8 @@ import warnings
 import numpy as np
 import pandas as pd
 import tensorflow as tf
+
+from . import utils
 from .base import TFRecord_Feeder, TF_CSV_Feeder, TF_TXT_Feeder, Gen_Feeder, Feeder
 from collections import defaultdict
 
@@ -704,6 +706,8 @@ class Imagenet_VID_Feeder(Feeder):
                  num_unrolls=None, batch_size=None, img_lib='cv2', config={}):
         super(Imagenet_VID_Feeder, self).__init__(data_ref_path, class_num, class_name, use_onehot, config)
         self._original_refs = None
+        self._xyxy_to_xywh = utils.xyxy_to_xywh
+        self._xywh_to_xyxy = utils.xywh_to_xyxy
 
         assert img_lib in ['cv2', 'skimage']
         self.img_lib = __import__(img_lib, fromlist=[''])
@@ -873,19 +877,6 @@ class Imagenet_VID_Feeder(Feeder):
     def _clip_bbox_from_ref(ref, image_shape):  # original ref
         xmin, ymin, xmax, ymax = np.clip(ref[-6:-2], 0, image_shape[[1, 0, 1, 0]])
         return xmin, ymin, xmax, ymax
-
-    @staticmethod
-    def _xyxy_to_xywh(xyxy):
-        xc, yc = int((xyxy[0] + xyxy[2]) / 2), int((xyxy[1] + xyxy[3]) / 2)  # xmin, ymin, xmax, ymax
-        h = xyxy[3] - xyxy[1]
-        w = xyxy[2] - xyxy[0]
-        return np.array([xc, yc, w, h])
-
-    @staticmethod
-    def _xywh_to_xyxy(xywh):
-        w_2 = int(xywh[2] / 2)
-        h_2 = int(xywh[3] / 2)
-        return np.array([xywh[0] - w_2, xywh[1] - h_2, xywh[0] + w_2, xywh[1] + h_2])
         
     def _solve_labelbox_center(self, ref, image_shape):
         xyxy_box = self._clip_bbox_from_ref(ref, image_shape)

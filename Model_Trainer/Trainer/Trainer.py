@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 '''
-module: base class to config / construct a training pipeline
+module: utils to config / construct a training pipeline
 '''
 
 import os
@@ -125,3 +125,18 @@ class Cross_Val_Trainer(object):
 
             # evaluate on train fold
             self.evaluate_func(train_fold, val_fold)
+
+def set_rand_seed(seed, platform):
+    assert any([n in str(platform) for n in ['tensorflow', 'torch']])  #
+    random.seed(seed)
+    os.environ['PYTHONHASHSEED'] = str(seed)
+    np.random.seed(seed)
+    if 'torch' in str(platform):
+        platform.manual_seed(seed)
+        platform.cuda.manual_seed(seed)
+        platform.backends.cudnn.benchmark = False
+        platform.backends.cudnn.deterministic = True
+    elif 'tensorflow' in platform:
+        platform.set_random_seed(seed)
+    else:
+        raise Exception('only support tensorflow, torch, but given %s', str(platform))

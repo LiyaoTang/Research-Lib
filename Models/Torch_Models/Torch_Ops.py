@@ -51,3 +51,33 @@ def xcorr_depthwise(x, kernel):
     out = F.conv2d(x, kernel, groups=batch*channel)
     out = out.view(batch, channel, out.size(2), out.size(3))
     return out
+
+
+''' loss '''
+
+
+def cls_loss(pred, label, select):
+    if len(select.size()) == 0:
+        return 0
+    pred = torch.index_select(pred, 0, select)
+    label = torch.index_select(label, 0, select)
+    return F.nll_loss(pred, label)
+
+
+def select_cross_entropy_loss(pred, label):
+    pred = pred.view(-1, 2)
+    label = label.view(-1)
+    pos = label.data.eq(1).nonzero().squeeze().cuda()
+    neg = label.data.eq(0).nonzero().squeeze().cuda()
+    loss_pos = cls_loss(pred, label, pos)
+    loss_neg = cls_loss(pred, label, neg)
+    return loss_pos * 0.5 + loss_neg * 0.5
+
+
+def weight_l1_loss(pred_loc, label_loc, loss_weight):
+    b, _, sh, sw = pred_loc.size()
+    pred_loc = pred_loc.view(b, 4, -1, sh, sw)
+    diff = (pred_loc - label_loc).abs()
+    diff = diff.sum(dim=1).view(b, -1, sh, sw)
+    loss = diff * loss_weight
+    return loss.sum().div(b)

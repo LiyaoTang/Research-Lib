@@ -8,6 +8,7 @@ script: construct a npy file for label of ILSVRC2015 detectoin from video (VID) 
                         ]
     ordered by: first video id, then track id, then frame id => all labels for a single track are next to each other
     => construct MOT data into VOT label
+TODO: enable parallel computing
 '''
 
 import os
@@ -42,6 +43,39 @@ class Size_Info(object):
         print('max size = ', self.max_size)
         print('min size = ', self.min_size)
 
+classes = {
+    'n01674464': 1,
+    'n01662784': 2,
+    'n02342885': 3,
+    'n04468005': 4,
+    'n02509815': 5,
+    'n02084071': 6,
+    'n01503061': 7,
+    'n02324045': 8,
+    'n02402425': 9,
+    'n02834778': 10,
+    'n02419796': 11,
+    'n02374451': 12,
+    'n04530566': 13,
+    'n02118333': 14,
+    'n02958343': 15,
+    'n02510455': 16,
+    'n03790512': 17,
+    'n02391049': 18,
+    'n02121808': 19,
+    'n01726692': 20,
+    'n02062744': 21,
+    'n02503517': 22,
+    'n02691156': 23,
+    'n02129165': 24,
+    'n02129604': 25,
+    'n02355227': 26,
+    'n02484322': 27,
+    'n02411705': 28,
+    'n02924116': 29,
+    'n02131653': 30,
+}
+
 def main(label_type):
     wildcard = '/*/*/' if label_type == 'train' else '/*/'
     dataset_path = '../Data/ILSVRC2015/'
@@ -51,39 +85,6 @@ def main(label_type):
     # video annotation: ILSVRC2015/Annotations/VID/[train, val]      /          [snippet ID]/[frame ID].xml
     video_dirs = sorted(glob.glob(annotationPath + 'VID/' + label_type + wildcard)) # all video folders
     total_image_cnt = len(glob.glob(annotationPath + 'VID/' + label_type + wildcard + '*.xml'))
-
-    classes = {
-            'n01674464': 1,
-            'n01662784': 2,
-            'n02342885': 3,
-            'n04468005': 4,
-            'n02509815': 5,
-            'n02084071': 6,
-            'n01503061': 7,
-            'n02324045': 8,
-            'n02402425': 9,
-            'n02834778': 10,
-            'n02419796': 11,
-            'n02374451': 12,
-            'n04530566': 13,
-            'n02118333': 14,
-            'n02958343': 15,
-            'n02510455': 16,
-            'n03790512': 17,
-            'n02391049': 18,
-            'n02121808': 19,
-            'n01726692': 20,
-            'n02062744': 21,
-            'n02503517': 22,
-            'n02691156': 23,
-            'n02129165': 24,
-            'n02129604': 25,
-            'n02355227': 26,
-            'n02484322': 27,
-            'n02411705': 28,
-            'n02924116': 29,
-            'n02131653': 30,
-            }
 
     cnt = 0
     bbox_size = Size_Info()
