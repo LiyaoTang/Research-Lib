@@ -697,13 +697,18 @@ class Back_Radar_Bbox_Gen_Feeder(Gen_Feeder):
 
 class Track_Feeder(Feeder):
     '''
-    base class for track feeder, implement utilities useful for: 
-        encoding bbox onto img (crop, mask, mesh)
-        convert label type (xyxy, xywh)
+    feeder to read prepared tracking dataset (e.g. ImageNet VID)
+    reference mapping: a ref -> a track (a series of img with one or more object)
+    original reference format: [[video_id, frame_id, track_id, class_id, img_h, img_w, xmin, ymin, xmax, ymax]...],
+        where video_dir=video_id, img_name=frame_id => img_path=os.path.join(video_id, frame_id)
+    implemented useful functions:
         read img (RGB, BGR)
+        convert label type (xyxy, xywh)
+        encoding bbox onto img (crop, mask, mesh)
+    note: xy-min/max are in window coord => x indexing col & y indexing row
     '''
 
-    def __init__(self, data_ref_path, num_unrolls=None, batch_size=None, config={}):
+    def __init__(self, data_ref_path, config={}):
         super(Track_Feeder, self).__init__(data_ref_path, class_num=None, class_name=None, use_onehot=True, config=config)
 
         self._xyxy_to_xywh = utils.xyxy_to_xywh
@@ -712,16 +717,17 @@ class Track_Feeder(Feeder):
         assert config['img_lib'] in ['cv2', 'skimage']
         assert config['img_order'] in ['RGB', 'BGR']
         self.img_lib = __import__(config['img_lib'], fromlist=[''])
-        if config['img_lib'] == 'cv2':
-            if config['img_order'] == 'RGB':
-                self.imread = lambda path: self.img_lib.imread(path)[:,:,::-1]  # read as RGB
-            else:
-                self.imread = lambda path: self.img_lib.imread(path)
+        if (config['img_lib'] == 'cv2' and config['img_order'] == 'BGR') or \
+           (config['img_lib'] == 'skimage' and config['img_order'] == 'RGB'):
+           self.imread = lambda path: self.img_lib.imread(path)
         else:
-            if config['img_order'] == 'BGR':
-                self.imread = lambda path: self.img_lib.imread(path)[:,:,::-1]
-            else:
-                self.imread = lambda path: self.img_lib.imread(path)
+            self.imread = lambda path: self.img_lib.imread(path)[:,:,::-1]
+
+        assert config['mode'] in ['re3', 'siam']
+        if config['mode'] == 're3':
+            self.crop_size = 227 if 'crop_size' not in config else int(config[crop_size])
+        else:
+            self.crop_size = 511 if 'crop_size' not in config else int(config[crop_size])
 
         assert config['label_type'] in ['corner', 'center']
         if config['label_type'] == 'corner':
@@ -731,27 +737,37 @@ class Track_Feeder(Feeder):
             self._convert_label_type = self._xyxy_to_xywh
             self.revert_label_type = self._xywh_to_xyxy
 
-        assert config['bbox_encoding'] in ['mask', 'crop', 'mesh']
+        assert config['bbox_encoding'] in ['crop', 'mask', 'mesh']
         if config['bbox_encoding'] == 'crop':
-            self.crop_size = config['crop_size']
             self._encode_bbox = self._encode_bbox_crop  # encode bbox to both input img & label
             self.decode_bbox = self._decode_bbox_crop  # decode pred to bbox on full image
-            self._get_input_label_example = self._get_input_label_example_crop # feed pair of crop
-        elif config['bbox_encoding'] == 'mesh':
-            self._encode_bbox = self._encode_bbox_mesh_mask
-            self.decode_bbox = self._decode_bbox_mask
-            self._get_input_label_example = self._get_input_label_example_mask # feed full img with mask
-        else:  # mask encodeing
+        elif config['bbox_encoding'] == 'mask':
             self._encode_bbox = self._encode_bbox_mask
             self.decode_bbox = self._decode_bbox_mask
-            self._get_input_label_example = self._get_input_label_example_mask
+        else:  # mesh encodeing
+            self._encode_bbox = self._encode_bbox_mesh_mask
+            self.decode_bbox = self._decode_bbox_mask
 
         self.data_dir = '/'.join(self.data_ref_path.strip('/').split('/')[:-1]) \
                         if 'data_dir' not in config else config['data_dir']  # keys default to be directly under data dir
 
-        # finally, construct self.data_refs & record num_unrolls/batch_size, if provided
-        self.num_unrolls = num_unrolls
-        self.batch_size = batch_size
+    def _load_original_refs(self):
+        # load the prepared original refs
+        if self._original_refs is None:
+            refs = np.load(self.data_ref_path)
+            # sort first by video, then track, then frame
+            idx = np.lexsort((refs[:, 1], refs[:, 2], refs[:, 0]))
+            refs = refs[idx]
+            self._original_refs = refs
+
+    def reset(self):
+        '''
+        reconstruct feeder accordingly
+        '''
+        raise NotImplementedError
+
+    def _get_img(self, ref):  # original ref
+        return self.imread(os.path.join(ref[0], ref[1]))
 
     @staticmethod
     def _get_mask(img_shape, bbox):
@@ -774,7 +790,7 @@ class Track_Feeder(Feeder):
         img = np.concatenate([img, mask, Y[..., np.newaxis], X[..., np.newaxis]], axis=-1)
         return img, self._convert_label_type(cur_box)
 
-    def _encode_bbox_crop(self, img, prev_box, cur_box, crop_size=227):
+    def _encode_bbox_crop(self, img, prev_box, cur_box):
         img_shape = np.array(img.shape)
         x, y, w, h = self._xyxy_to_xywh(prev_box)  # prev_box from original imagenet label
 
@@ -791,18 +807,18 @@ class Track_Feeder(Feeder):
         cropped_img[xyxy_in_crop[1]:xyxy_in_crop[3], xyxy_in_crop[0]:xyxy_in_crop[2]] = img[ymin:ymax, xmin:xmax]
 
         label_box = cur_box - extended_bbox[[0, 1, 0, 1]]  # originated as [x,y,x,y] - [xmin,ymin,xmin,ymin]
-        label_box[[0, 2]] = label_box[[0, 2]] / crop_shape[1] * crop_size  # normalized as x / w ratio, then rescale
-        label_box[[1, 3]] = label_box[[1, 3]] / crop_shape[0] * crop_size  # normalized as y / h ratio, then rescale
-        return self.img_lib.resize(cropped_img, (crop_size, crop_size)), self._convert_label_type(label_box)
+        label_box[[0, 2]] = label_box[[0, 2]] / crop_shape[1] * self.crop_size  # normalized as x / w ratio, then rescale
+        label_box[[1, 3]] = label_box[[1, 3]] / crop_shape[0] * self.crop_size  # normalized as y / h ratio, then rescale
+        return self.img_lib.resize(cropped_img, (self.crop_size, self,crop_size)), self._convert_label_type(label_box)
 
-    def _decode_bbox_crop(self, prev_box, cur_box, crop_size=227):
+    def _decode_bbox_crop(self, prev_box, cur_box):
         x, y, w, h = self._xyxy_to_xywh(prev_box)  # prev_box assumed to be as original imagenet label format
         extended_bbox = np.array([x - w, y - h, x + w, y + h])  # xyxy
         crop_shape = (2 * h, 2 * w)
         
         box = self.revert_label_type(cur_box) # as xyxy
-        box[[0, 2]] = box[[0, 2]] / crop_size * crop_shape[1]  # recover ratio and rescale according to original img shape
-        box[[1, 3]] = box[[1, 3]] / crop_size * crop_shape[0]
+        box[[0, 2]] = box[[0, 2]] / self.crop_size * crop_shape[1]  # recover ratio and rescale according to original img shape
+        box[[1, 3]] = box[[1, 3]] / self.crop_size * crop_shape[0]
         box = box + extended_bbox[[0, 1, 0, 1]]  # originated back to img coord
         return box.astype(int)
 
@@ -812,7 +828,7 @@ class Track_Feeder(Feeder):
 
     @staticmethod
     def _clip_bbox_from_ref(ref, image_shape):  # original ref
-        xmin, ymin, xmax, ymax = np.clip(ref[-6:-2], 0, image_shape[[1, 0, 1, 0]])
+        xmin, ymin, xmax, ymax = np.clip(ref[-4:], 0, image_shape[[1, 0, 1, 0]])
         return xmin, ymin, xmax, ymax
         
     def _solve_labelbox_center(self, ref, image_shape):
@@ -829,79 +845,52 @@ class Track_Feeder(Feeder):
         return img
 
 
-class Imagenet_VID_Feeder(Track_Feeder):
+class Track_Re3_Feeder(Track_Feeder):
     '''
-    feeder to read from imagenet VID dataset, given a prepared list of references;
-    reference mapping: a ref -> a track (a series of img with one or more object)
-    # original reference format: [[package_id, video_id, frame_id, track_id, class_id, occludded, xmin, ymin, xmax, ymax]...]
+    feeder for re3 tracker
     original reference format: [[video_id, frame_id, track_id, class_id, img_h, img_w, xmin, ymin, xmax, ymax]...],
-        where video_dir=video_id, img_name=frame_id
-            => img_path=os.path.join(video_id, frame_id)
-    note: xy-min/max are in window coord => x indexing col & y indexing row 
+        where video_dir=video_id, img_name=frame_id => img_path=os.path.join(video_id, frame_id)    
     '''
-    def __init__(self, data_ref_path, class_num, class_name=None, use_onehot=True, mode='rnn',
+
+    def __init__(self, data_ref_path, class_num, class_name=None, use_onehot=True, mode='re3',
                  num_unrolls=None, batch_size=None, img_lib='cv2', config={}):
         config['img_lib'] = img_lib
         config['img_style'] = 'RGB'
-        super(Imagenet_VID_Feeder, self).__init__(data_ref_path, num_unrolls, batch_size, config)
+        super(Imagenet_VID_Feeder, self).__init__(data_ref_path, config)
         self._original_refs = None
 
-        assert config['data_split'] in ['train', 'val', 'test']
-        self.data_split = config['data_split']
-        if self.data_split == 'train':
-            self._get_img = self._get_train_img
-        else:
-            self._get_img = self._get_valtest_img
+        assert config['bbox_encoding'] in ['crop', 'mask', 'mesh']
+        if config['bbox_encoding'] == 'crop':
+            self.decode_bbox = self._decode_bbox_crop  # decode pred to bbox on full image
+            self._get_input_label_example = self._get_input_label_example_crop # feed pair of crop
+        elif config['bbox_encoding'] == 'mask':
+            self._get_input_label_example = self._get_input_label_example_mask # feed full img with mask
+        else:  # mesh encodeing
+            self._get_input_label_example = self._get_input_label_example_mask
 
         # construct self.data_refs & record num_unrolls/batch_size, if provided
         if num_unrolls and batch_size:
             self.reset(num_unrolls, batch_size)
 
-    def _load_original_refs(self):
-        # load the prepared original refs
-        if self._original_refs is None:
-            refs = np.load(self.data_ref_path)
-            # sort first by package, then video snippet, then track, then frame
-            idx = np.lexsort((refs[:, 2], refs[:, 3], refs[:, 1], refs[:, 0]))
-            # # sort first by video, then track, then frame
-            # idx = np.lexsort((refs[:, 1], refs[:, 2], refs[:, 0]))
-            refs = refs[idx]
-            self._original_refs = refs
+    def reset(self, num_unrolls=None, batch_size=None):
+        '''
+        reconstruct feeder according to specified num_unrolls
+        '''
+        if self.num_unrolls != num_unrolls and num_unrolls is not None:
+            self.num_unrolls = num_unrolls
+        if self.batch_size != batch_size and batch_size is not None:
+            self.batch_size = batch_size
+        assert self.num_unrolls is not None and self.batch_size is not None
+        self._load_data_ref()
 
-    def _load_data_ref_siam(self):
-        self._load_original_refs()
-        
-        ref_dict = defaultdict(lambda: [])  # img size -> [track ref, ...], track_ref=(start_idx, end_idx)
-        update_info = lambda i: [list(self._original_refs[start_idx][[0, 1]]),
-                                 tuple(self._original_refs[start_idx][[4, 5]])]
-        start_idx = 0
-        start, size = update_info(start_idx)
-        for idx in range(1, len(self._original_refs)):
-            end = list(self._original_refs[idx][[0, 1, 3]])
-            if start != end:  # encountering new track => record last track & start new track
-                ref_dict[size].append((start_idx, idx))  # split into groups based on img size
-                start_idx = idx
-                start, size = update_info(start_idx)
-        if idx != start_idx:  # finish the last track
-            ref_dict[size].append((start_idx, idx))
-        
-        if self.config['bbox_encoding'] == 'crop':  # aggregated into one list
-            ref_dict_values = [sum([ref_list for ref_list in ref_dict.values()], start=[])]
-        else:
-            ref_dict_values = ref_dict.values()
-        
-        data_ref = []  # construct based on pos-neg ratio
-        for ref_list in ref_dict_values:
-            pass
-        
     def _load_data_ref(self):
         self._load_original_refs()
 
         ref_dict = defaultdict(lambda: []) # img size -> [track ref, ...], track_ref=idx (track len fixed)
         for idx in range(len(self._original_refs) - self.num_unrolls):
-            start = list(self._original_refs[idx][[0, 1, 3]])
-            end = list(self._original_refs[idx + self.num_unrolls - 1][[0, 1, 3]])
-            size = tuple(self._original_refs[idx][[-2, -1]])
+            start = list(self._original_refs[idx][[0, 2]])
+            end = list(self._original_refs[idx + self.num_unrolls - 1][[0, 2]])
+            size = tuple(self._original_refs[idx][[4, 5]])
             if start == end:  # still in the same track
                 ref_dict[size].append(idx)  # split into groups based on img size        
         
@@ -923,31 +912,6 @@ class Imagenet_VID_Feeder(Track_Feeder):
                 data_ref.append(cur_batch)
         np.random.shuffle(data_ref)
         self.data_ref = data_ref
-    
-    def reset(self, num_unrolls=None, batch_size=None):
-        '''
-        reconstruct feeder according to specified num_unrolls
-        '''
-        if self.num_unrolls != num_unrolls and num_unrolls is not None:
-            self.num_unrolls = num_unrolls
-        if self.batch_size != batch_size and batch_size is not None:
-            self.batch_size = batch_size
-        assert self.num_unrolls is not None and self.batch_size is not None
-        self._load_data_ref()
-
-    def _get_train_img(self, img_ref):
-        # ILSVRC2015/Data       /VID/[train, val, test]/[package]/[snippet ID]/[frame ID].JPEG
-        package_name = 'ILSVRC2015_VID_train_%04d' % img_ref[0]
-        img_path = '%s/Data/VID/train/%s/ILSVRC2015_train_%08d/%06d.JPEG' % (self.data_dir, package_name, img_ref[1], img_ref[2])
-        img = self.imread(img_path)
-        return img
-
-    def _get_valtest_img(self, img_ref):
-        # ILSVRC2015/Data/VID/[val, test]/[snippet ID]/[frame ID].JPEG
-        img_path = '%s/Data/VID/%s/ILSVRC2015_%s_%08d/%06d.JPEG' % \
-                    (self.data_dir, self.data_split, self.data_split, img_ref[1], img_ref[2])
-        img = self.imread(img_path)
-        return img
 
     def _get_input_label_pair(self, ref):
         # generate a pair of batch
@@ -995,7 +959,7 @@ class Imagenet_VID_Feeder(Track_Feeder):
         input_seq = []
         label_seq = []
         prev_box = None
-        for r in org_ref:  # for original_ref in a track/video
+        for r in org_ref:  # for original_ref in a track
             cur_img = self._get_img(r)
             cur_box = self._clip_bbox_from_ref(r, np.array(cur_img.shape))  # xyxy box
 
@@ -1011,7 +975,7 @@ class Imagenet_VID_Feeder(Track_Feeder):
     def _get_input_label_from_inference(self, ref):
         img_seq = []
         box_seq = []
-        for r in ref:  # for original_ref in constructed track/video ref
+        for r in ref:  # for original_ref in constructed track ref
             cur_img = self._get_img(r)
             cur_box = self._clip_bbox_from_ref(r, np.array(cur_img.shape))  # xyxy box
             img_seq.append(cur_img)
@@ -1061,3 +1025,31 @@ class Imagenet_VID_Feeder(Track_Feeder):
 
         self.config['use_inference_prob'] = _use_inference_prob
         self.num_unrolls = _num_unrolls
+
+
+
+    # def _load_data_ref_siam(self):
+    #     self._load_original_refs()
+        
+    #     ref_dict = defaultdict(lambda: [])  # img size -> [track ref, ...], track_ref=(start_idx, end_idx)
+    #     update_info = lambda i: [list(self._original_refs[start_idx][[0, 1]]),
+    #                              tuple(self._original_refs[start_idx][[4, 5]])]
+    #     start_idx = 0
+    #     start, size = update_info(start_idx)
+    #     for idx in range(1, len(self._original_refs)):
+    #         end = list(self._original_refs[idx][[0, 1, 3]])
+    #         if start != end:  # encountering new track => record last track & start new track
+    #             ref_dict[size].append((start_idx, idx))  # split into groups based on img size
+    #             start_idx = idx
+    #             start, size = update_info(start_idx)
+    #     if idx != start_idx:  # finish the last track
+    #         ref_dict[size].append((start_idx, idx))
+        
+    #     if self.config['bbox_encoding'] == 'crop':  # aggregated into one list
+    #         ref_dict_values = [sum([ref_list for ref_list in ref_dict.values()], start=[])]
+    #     else:
+    #         ref_dict_values = ref_dict.values()
+        
+    #     data_ref = []  # construct based on pos-neg ratio
+    #     for ref_list in ref_dict_values:
+    #         pass
