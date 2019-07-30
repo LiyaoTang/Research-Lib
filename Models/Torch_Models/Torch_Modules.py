@@ -102,6 +102,11 @@ class AlexNetLegacy(nn.Module):
 
 
 class MobileNetV2(nn.Sequential):
+    '''
+    mobile net backbone as feature extractor
+    width_mult: to obtain more channels (thus more representative)
+    '''
+
     def __init__(self, width_mult=1, used_layers=[3, 5, 7]):
         super(MobileNetV2, self).__init__()
 
@@ -118,7 +123,7 @@ class MobileNetV2(nn.Sequential):
         # 0,2,3,4,6
 
         self.interverted_residual_setting = [
-            # t, c, n, s, d = expand_ratio, channel, block num, stride, dilation
+            # t, c, n, s, d = expand_ratio, out channel, block num, stride, dilation
             [1, 16, 1, 1, 1],
             [6, 24, 2, 2, 1],
             [6, 32, 3, 2, 1],
@@ -128,20 +133,17 @@ class MobileNetV2(nn.Sequential):
             [6, 320, 1, 1, 4],
         ]
 
-        self.channels = [24, 32, 96, 320]
-        self.channels = [int(c * width_mult) for c in self.channels]
-
-        input_channel = int(32 * width_mult)
+        self.channels = [int(c * width_mult) for c in [24, 32, 96, 320]]
         self.last_channel = int(1280 * width_mult)
 
-        # torch_ops.conv_bn(3, input_channel, 2, 0)
+        # first layer
+        input_channel = int(32 * width_mult)
         layer0 = nn.Sequential(
             nn.Conv2d(3, out_channels=input_channel, kernel_size=3, stride=2, padding=0, bias=False),
             nn.BatchNorm2d(num_features=input_channel),
             nn.ReLU6(inplace=True)  # min(max(0,x),6): maximal response=6
         )
         self.add_module('layer0', layer0)
-
 
         last_dilation = 1
         self.used_layers = used_layers
@@ -166,7 +168,6 @@ class MobileNetV2(nn.Sequential):
             name = "layer%d" % idx
             x = getattr(self, name)(x)
             outputs.append(x)
-        p0, p1, p2, p3, p4 = [outputs[i] for i in [1, 2, 3, 5, 7]]
         out = [outputs[i] for i in self.used_layers]
         return out
 
@@ -177,7 +178,6 @@ class MobileNetV2(nn.Sequential):
 class InvertedResidual(nn.Module):
     '''
     inverted residual blocks for mobile net v2
-    TODO: a block, to be placed into layers or else-where
     '''
 
     def __init__(self, in_channels, out_channels, stride, expand_ratio, dilation=1):
@@ -211,6 +211,7 @@ class DepthwiseXCorr(nn.Module):
     '''
     perform cross-relation (as conv) with one feature map (as kernel) on the other (as search)
     '''
+
     def __init__(self, in_channels, hidden, out_channels, kernel_size=3, hidden_kernel_size=5):
         super(DepthwiseXCorr, self).__init__()
         self.conv_kernel = nn.Sequential(  # regress the conv kernel
@@ -296,7 +297,7 @@ class DepthwiseRPN(RPN):
 
 
 class MultiRPN(RPN):
-    def __init__(self, anchor_num, in_channels, weighted=False):
+    def __init__(self, anchor_num=5, in_channels, weighted=False):
         super(MultiRPN, self).__init__()
         self.weighted = weighted
         for i in range(len(in_channels)):

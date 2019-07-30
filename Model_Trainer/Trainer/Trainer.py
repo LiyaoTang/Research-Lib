@@ -140,3 +140,23 @@ def set_rand_seed(seed, platform):
         platform.set_random_seed(seed)
     else:
         raise Exception('only support tensorflow, torch, but given %s', str(platform))
+
+
+class Base_Trainer(object):
+    def __init__(self):
+        raise NotImplementedError
+
+    def construct_feeder(self):
+        raise NotImplementedError
+
+    def construct_model(self):
+        raise NotImplementedError
+
+    def _link_feeder_model_dependency(self):
+        raise NotImplementedError
+
+    def prepare_train(self):
+        raise NotImplementedError
+        
+    def train(self):
+        raise NotImplementedError
