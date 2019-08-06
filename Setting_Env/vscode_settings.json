@@ -1,0 +1,29 @@
+{
+    "files.exclude": {
+        "**/__pycache__": true,
+    },
+
+    "editor.fontSize": 16,
+    "editor.defaultFormatter": "xaver.clang-format",
+    "editor.formatOnType": true,
+    "editor.largeFileOptimizations": true,
+
+    "C_Cpp.clang_format_style": "file",
+
+    "python.formatting.provider": "autopep8",
+    "python.formatting.autopep8Path": "~/.local/bin/autopep8",
+    "python.formatting.autopep8Args": ["--global-config=~/Research-Lib/Setting_Env/format_python_autopep8"],
+    "python.terminal.activateEnvironment": false,
+    "python.linting.enabled": false,
+    "python.autoComplete.addBrackets": true,
+    "python.jediEnabled": true,
+    "python.dataScience.sendSelectionToInteractiveWindow": false,
+
+    "terminal.integrated.shell.linux": "/bin/bash",
+    "window.zoomLevel": 0,
+    "workbench.editor.revealIfOpen": true,
+
+    "[latex]": {
+        "editor.wordWrap": "on"
+    },
+}

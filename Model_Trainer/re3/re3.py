@@ -14,10 +14,6 @@ import random
 import psutil
 import argparse
 
-import Re3_Trainer as trainer
-
-DEBUG = True
-
 ''' parsing args '''
 
 def str2bool(v):
@@ -67,10 +63,6 @@ parser.add_argument('--display', default=False, type=str2bool, dest='display')
 
 args = parser.parse_args()
 
-if args.rand_seed is not None:
-    np.random.seed(args.rand_seed)
-    tf.random.set_random_seed(args.rand_seed)
-
 # model name
 if not args.model_name:
     tt = time.localtime()
@@ -101,9 +93,18 @@ if args.log_dir:
 else:
     log_file = ''
 
+# import training after env prepared
+import tensorflow as tf
+import Re3_Trainer as trainer
+
+if args.rand_seed is not None:
+    np.random.seed(args.rand_seed)
+    tf.random.set_random_seed(args.rand_seed)
+
 try:
     re3_trainer = trainer.Re3_Trainer(args.model_name, args.root_dir, args)
     re3_trainer.train()
 except:
-    log_file.close()
+    if log_file:
+        log_file.close()
     raise

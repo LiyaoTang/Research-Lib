@@ -47,20 +47,16 @@ class Re3_Trainer(object):
         self.train = self.train_tfdataset if self.args.use_tfdataset else self.train_feeddict
         self.display_img_pred_label = self.display_img_pred_label_single if args.bbox_encoding != 'crop' else self.display_img_pred_label_double
 
-    # def _construct_tf_feeder(self, args):
-    # def _construct_py_feeder(self, args):
-
     def construct_feeder(self, num_unrolls, batch_size):
         args = self.args
         feeder_cfg = {
             'label_type': args.label_type,
             'bbox_encoding': args.bbox_encoding,
             'use_inference_prob': args.use_inference_prob,
-            'data_split': 'train',
+            'base_path': '../../Data'
         }
-        data_ref_dir = os.path.join(root_dir, 'Data/ILSVRC2015')
-        train_ref = os.path.join(data_ref_dir, 'train_label.npy') 
-        train_feeder = feeder.Imagenet_VID_Feeder(train_ref, class_num=30, num_unrolls=num_unrolls, batch_size=batch_size, config=feeder_cfg)
+        train_ref = os.path.join('../../Data/ILSVRC2015/train_label.npy')
+        train_feeder = feeder.Track_Re3_Feeder(train_ref, num_unrolls=num_unrolls, batch_size=batch_size, config=feeder_cfg)
         self.train_feeder = train_feeder
         print('total data num = ', len(train_feeder.data_ref))
 
@@ -268,9 +264,8 @@ class Re3_Trainer(object):
         plt.close()
 
     # routine to update model
-    def run_train_step(self, feed_dict, global_step, display=False):
+    def run_train_step(self, feed_dict, global_step):
         op_to_run = [self.train_step]
-
         # record summary
         if global_step % 5000 == 0:  # conv, lstm, loss => all summary
             op_to_run += [self.tracker.summary['all']]
@@ -280,22 +275,14 @@ class Re3_Trainer(object):
         elif global_step % 100 == 0:  # loss
             op_to_run += [self.tracker.summary['loss']]
 
-        # get pred bbox for display
-        if display:
-            op_to_run += [self.tracker.pred]
-
         # run ops
-        op_output = self.sess.run(op_to_run, feed_dict=feed_dict)
-
-        # display
-        if display:
-            track_pred = op_output[-1]
-            track_img = input_batch[0]
-            label_box = [self.train_feeder.revert_label_type(l) for l in label_batch[0]]
-            pred_box = [self.train_feeder.revert_label_type(p) for p in track_pred[0]]
-
-            self.display_img_pred_label(track_img, label_box, pred_box)
-            op_output = op_output[:-1] # get rid of pred
+        if global_step % 2000 == 0:  # collect runtime statistics
+            run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
+            run_metadata = tf.RunMetadata()
+            op_output = self.sess.run(op_to_run, feed_dict=feed_dict, options=run_options, run_metadata=run_metadata)
+            self.summary_writer.add_run_metadata(run_metadata, 'step_%d' % global_step)
+        else:
+            op_output = self.sess.run(op_to_run, feed_dict=feed_dict)
 
         # write summary
         cur_summary = op_output[1:]
@@ -320,8 +307,8 @@ class Re3_Trainer(object):
             # stablize first few convs, then jointly train
             num_unrolls = 2
             batch_size = 2
-            epoch = 2
-            # allow only specified vars to train: to stablize (for 2 epoch, no re-config)
+            epoch = 1
+            # allow only specified vars to train: to stablize (no re-config)
             self.prepare_train(num_unrolls, batch_size, dummy_summary=True)
             self.train_step = self.tracker.train_step
             print('training prepared')
@@ -333,7 +320,7 @@ class Re3_Trainer(object):
                         self.tracker.tf_label: label_batch,
                         # self.tracker.prev_state: self.tf_init_state(batch_size),
                     }
-                    self.run_train_step(feed_dict, self.global_step, args.display)
+                    self.run_train_step(feed_dict, self.global_step)
                     self.global_step += 1
 
             # num_unrolls = 2
@@ -341,7 +328,7 @@ class Re3_Trainer(object):
             # while num_unrolls <= 32:
             #     self.prepare_train(num_unrolls, batch_size)
             #     for input_batch, label_batch in self.data_feeder.iterate_data():
-            #         run_train_step(input_batch, label_batch, self.global_step, args.display)
+            #         run_train_step(input_batch, label_batch, self.global_step)
             #         self.global_step += 1
             #     num_unrolls *= 2
             #     batch_size /= 2
@@ -369,8 +356,8 @@ class Re3_Trainer(object):
             # stablize first few convs, then jointly train
             num_unrolls = 2
             batch_size = 2
-            epoch = 2
-            # allow only specified vars to train: to stablize (for 2 epoch, no re-config)
+            epoch = 1
+            # allow only specified vars to train: to stablize (no re-config)
             self.prepare_train(num_unrolls, batch_size, dummy_summary=True)
             self.train_step = self.tracker.train_step
             feed_dict = {}
@@ -380,9 +367,9 @@ class Re3_Trainer(object):
                 print('starting epoch', ep_cnt)
                 while True:
                     try:
-                        self.run_train_step(feed_dict, self.global_step, args.display)
+                        self.run_train_step(feed_dict, self.global_step)
                         self.global_step += 1
-                    except:
+                    except tf.errors.OutOfRangeError:
                         break
                 
             # num_unrolls = 2
@@ -390,7 +377,7 @@ class Re3_Trainer(object):
             # while num_unrolls <= 32:
             #     self.prepare_train(num_unrolls, batch_size)
             #     for input_batch, label_batch in self.data_feeder.iterate_data():
-            #         run_train_step(input_batch, label_batch, self.global_step, args.display)
+            #         run_train_step(input_batch, label_batch, self.global_step)
             #         self.global_step += 1
             #     num_unrolls *= 2
             #     batch_size /= 2

@@ -53,7 +53,7 @@ class Siam_RPN(nn.Module):
             self.neck = self.neck[0]
             self.neck_forward = self.neck
         else:
-            self.nect_forward = lambda feat_list: [nn(f) for nn, f in zip(self.neck, feat_list)]
+            self.neck_forward = lambda feat_list: [nn(f) for nn, f in zip(self.neck, feat_list)]
 
         # construct rpn
         cfg = config['rpn']
@@ -65,7 +65,7 @@ class Siam_RPN(nn.Module):
     def _template(self, z):
         zf = self.backbone(z)  # extract template feature
         if self.nect:
-            zf = self.nect_forward(zf)
+            zf = self.neck_forward(zf)
         self.zf = zf
 
     def inference_onestep(self, x):
@@ -74,7 +74,7 @@ class Siam_RPN(nn.Module):
         '''
         xf = self.backbone(x)
         if self.neck:
-            xf = self.nect_forward(xf)
+            xf = self.neck_forward(xf)
         pred_cls, loc_pred = self.rpn(self.zf, xf)
         return {'cls': pred_cls,
                 'loc': loc_pred,}

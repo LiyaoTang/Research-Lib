@@ -23,7 +23,7 @@ use_inference_prob="-1"
 run_val="False"
 worker_num="1"
 buffer_size="2"
-use_parallel="True"
+use_parallel="False"
 use_tfdataset="True"
 display="False"
 rand_seed="None"
@@ -50,7 +50,6 @@ python re3.py --lrn_rate $lrn_rate \
               --restore_dir "${restore_dir}" \
               --weight_prefix "${weight_prefix}" \
               --model_name "${model_name}"
-                # --log ""
                 #  &
                 # --rand_seed ${rand} \
 
@@ -73,7 +72,7 @@ python re3.py --lrn_rate $lrn_rate \
               --restore_dir "${restore_dir}" \
               --weight_prefix "${weight_prefix}" \
               --model_name "${model_name}"
-                # --log ""
-                #  &
-                # --rand_seed ${rand} \
+#                 # --log ""
+#                 #  &
+#                 # --rand_seed ${rand} \
 wait

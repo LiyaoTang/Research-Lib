@@ -76,27 +76,25 @@ classes = {
     'n02131653': 30,
 }
 
+base_path = '../Data'
+dataset = 'ILSVRC2015'
 def main(label_type):
-    wildcard = '/*/*/' if label_type == 'train' else '/*/'
-    dataset_path = '../Data/ILSVRC2015/'
-    annotationPath = dataset_path + 'Annotations/'
+    wildcard = '*/*/' if label_type == 'train' else '*/'
+    dataset_path = os.path.join(base_path, dataset)
+    annotationPath = os.path.join(dataset_path, 'Annotations')
 
     # video Data:       ILSVRC2015/Data       /VID/[train, val, test]/[package]/[snippet ID]/[frame ID].JPEG
     # video annotation: ILSVRC2015/Annotations/VID/[train, val]      /          [snippet ID]/[frame ID].xml
-    video_dirs = sorted(glob.glob(annotationPath + 'VID/' + label_type + wildcard)) # all video folders
-    total_image_cnt = len(glob.glob(annotationPath + 'VID/' + label_type + wildcard + '*.xml'))
+    video_dirs = sorted(glob.glob(os.path.join(annotationPath, 'VID/', label_type, wildcard)))  # all video folders
+    total_image_cnt = len(glob.glob(os.path.join(annotationPath, 'VID/', label_type, wildcard, '*.xml')))
 
     cnt = 0
     bbox_size = Size_Info()
     img_size = Size_Info()
     bboxes = []
     for cur_video_dir in (video_dirs):
-        path_list = cur_video_dir.strip('/').split('/')
-        if label_type == 'train':
-            package_id = int(path_list[-2].split('_')[-1])
-        else:
-            package_id = -1
-        video_id = int(path_list[-1].split('_')[-1])
+
+        video_id = cur_video_dir.lstrip(base_path).replace('Annotations', 'Data')  # path to video dir containing img
         
         label_path = sorted(glob.glob(cur_video_dir + '*.xml')) # all labels in a video snippet
         image_path = [label.replace('Annotations', 'Data').replace('xml', 'JPEG') for label in label_path] # corresponding images
@@ -106,7 +104,7 @@ def main(label_type):
         for img_p, label_p in zip(image_path, label_path):
             if cnt % 1000 == 0:
                 print('cnt %d of %d = %.2f%%' % (cnt, total_image_cnt, cnt * 100.0 / total_image_cnt))
-            frame_id = int(img_p.split('/')[-1].split('.')[0])
+            frame_id = img_p.split('/')[-1]  # img name in the video dir
             
             if DEBUG:
                 print('\n%s' % img_p)
@@ -115,7 +113,7 @@ def main(label_type):
             labelTree = ET.parse(label_p)
 
             cur_size = labelTree.find('size')
-            cur_size = [int(cur_size.find('width').text), int(cur_size.find('height').text)]
+            cur_size = [int(cur_size.find('height').text), int(cur_size.find('width').text)]
             img_size.collect(cur_size)
 
             for obj in labelTree.findall('object'):
@@ -124,12 +122,11 @@ def main(label_type):
                 class_id = classes[cur_cls]
 
                 occl = int(obj.find('occluded').text)
-                track_id = int(obj.find('trackid').text)
+                track_id = obj.find('trackid').text  # label tagged on the obj being tracked
                 bbox = obj.find('bndbox')
                 xmin, ymin = int(bbox.find('xmin').text), int(bbox.find('ymin').text)
                 xmax, ymax = int(bbox.find('xmax').text), int(bbox.find('ymax').text)
-                bbox = [package_id, video_id, frame_id, track_id,
-                        class_id, occl, xmin, ymin, xmax, ymax, cur_size[0], cur_size[1]]
+                bbox = [video_id, frame_id, track_id, class_id, cur_size[0], cur_size[1], xmin, ymin, xmax, ymax]
 
                 bbox_size.collect([xmax - xmin, ymax - ymin])  # w,h
                 if SAVE:

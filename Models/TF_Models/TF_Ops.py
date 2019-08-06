@@ -212,6 +212,9 @@ def dense_layer(input, num_channels, activation=tf.nn.relu, weights_initializer=
 
 def conv_layer(input, out_channels, filter_size, stride=1, num_groups=1, padding='VALID', scope=None,
                activation=tf.nn.relu, weights_initializer=None, bias_initializer=None, return_vars=False):
+    '''
+    num_group: split feature map & an independent kernel+bias for each split
+    '''
     if type(filter_size) == int:
         filter_width = filter_size
         filter_height = filter_size
@@ -277,8 +280,7 @@ def rnn_gru_layer(input, rnn_size, batch_size, num_unrolls, bi_direct=False):
                                                                              sequence_length=num_unrolls,
                                                                              initial_state_fw=state_fw,
                                                                              initial_state_bw=state_bw,
-                                                                             scope='biLSTM_' +
-                                                                             str(n),
+                                                                             scope='biLSTM_' + str(n),
                                                                              dtype=tf.float32)
 
         cell_output = tf.concat([output_fw, output_bw], axis=-1)
