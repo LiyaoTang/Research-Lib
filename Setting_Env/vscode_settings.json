@@ -1,6 +1,8 @@
 {
     "files.exclude": {
         "**/__pycache__": true,
+        "**/.ipynb_checkpoints": true,
+        "Data/*": true
     },
 
     "editor.fontSize": 16,
@@ -9,6 +11,7 @@
     "editor.largeFileOptimizations": true,
 
     "C_Cpp.clang_format_style": "file",
+    "C_Cpp.default.includePath": ["/usr/local/include", "/usr/include",],
 
     "python.formatting.provider": "autopep8",
     "python.formatting.autopep8Path": "~/.local/bin/autopep8",

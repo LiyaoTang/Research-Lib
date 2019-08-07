@@ -7,9 +7,9 @@ AccessModifierOffset: -4
 
 IndentWidth: 4
 NamespaceIndentation: All
-AlignConsecutiveAssignments:True
+AlignConsecutiveAssignments: true
 
-BreakBeforeBraces: Custom
+BreakBeforeBraces: false
 BraceWrapping:
   AfterEnum: true
   AfterStruct: true

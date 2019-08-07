@@ -14,6 +14,10 @@ import sklearn.metrics as skmt
 import matplotlib.pyplot as plt
 from collections import defaultdict
 
+root_dir = '../'
+sys.path.append(root_dir)
+import Utilities as utils
+
 class Metric_Record(object):
     def __init__(self):
         pass
@@ -353,120 +357,6 @@ class General_Classif_Record(Classif_Metric_Record):
         self._cal_stat_on_rstrecord(record_prob=True)
 
 
-class Bounding_Box(object):
-    def __init__(self, box_def, def_type='xywh'):
-        if def_type == 'xywh':
-            self.x_var = [box_def[0] - int(box_def[2] / 2), box_def[0] + int(box_def[2] / 2)]
-            self.y_var = [box_def[1] - int(box_def[3] / 2), box_def[1] + int(box_def[3] / 2)]
-            self.w = box_def[2]
-            self.h = box_def[3]
-        elif def_type == 'xyxy':
-            self.x_var = [box_def[0], box_def[2]]
-            self.y_var = [box_def[1], box_def[3]]
-            self.w = box_def[2] - box_def[0]
-            self.h = box_def[3] - box_def[1]
-        else:
-            raise TypeError
-
-    @staticmethod
-    def overlap_interval(int_1, int_2):
-        '''
-        calculate the overlaped interval of 2 intervals ([0] for min, [1] for max)
-        '''
-        return max(0, min(int_1[1], int_2[1]) - max(int_1[0], int_2[0]))
-
-    def intersection(self, bbox):
-        sec_x = self.overlap_interval(self.x_var, bbox.x_var)
-        sec_y = self.overlap_interval(self.y_var, bbox.y_var)
-        return sec_x * sec_y
-
-    def IoU(self, bbox):
-        i = self.intersection(bbox)
-        u = self.w * self.h + bbox.w * bbox.h - i
-        return i / u
-
-
-class Det_Bounding_Box(object):
-    def __init__(self, box_def):
-        if type(box_def) is list:
-            self.__init_from_list(box_def)
-        elif type(box_def) is dict:
-            self.__init_from_dict(box_def)
-        else:
-            raise TypeError('not supported box_def type \"%s\" with value: \"%s\"' % (str(type(box_def)), str(box_def)))
-
-    def __init_from_list(self, def_list):
-        assert len(def_list) == 3  # [[4 xy coords], [elem(s) selected], [prob in onehot]]
-        
-        self.xy = def_list[0]
-        self.x = [xy[0] for xy in self.xy]
-        self.y = [xy[1] for xy in self.xy]
-
-        self.x_var = (min(self.x), max(self.x))
-        self.y_var = (min(self.y), max(self.y))
-
-        # may be larger than the actual size specified by points - due to resolution and other factors
-        self.width = self.x_var[1] - self.x_var[0]
-        self.height = self.y_var[1] - self.y_var[0]
-        self.size = self.width * self.height
-
-        # elem perspectives
-        self.elem = set(def_list[1])
-        self.elem_size = len(self.elem)
-        
-        self.prob = def_list[-1]
-
-        # default setting
-        self.valid = True
-        self.blockage = 0
-
-    def __init_from_dict(self, box_dict):
-        def_list = [[(box_dict['xy'][0], box_dict['xy'][1]),
-                     (box_dict['xy'][0] + box_dict['width'], box_dict['xy'][1]),
-                     (box_dict['xy'][0], box_dict['xy'][1] + box_dict['height']),
-                     (box_dict['xy'][0] + box_dict['width'], box_dict['xy'][1] + box_dict['height'])],
-                    box_dict['elem'],
-                    box_dict['prob']]
-        self.__init_from_list(def_list)
-        for k, v in box_dict.items():
-            if k not in ['xy', 'elem', 'prob', 'width', 'height']:
-                setattr(self, k, v)
-
-    def to_polar(self, origin=(0, 0)):
-        '''
-        convert to polar coord given the origin
-        '''
-        complex_xy = [xy[0] - origin[0] + 1j * (xy[1] - origin[1]) for xy in self.xy]
-        self.dist = [np.abs(c_xy) for c_xy in complex_xy]
-        self.angle = [np.angle(c_xy) for c_xy in complex_xy]
-
-        self.dist_var = (min(self.dist), max(self.dist))
-        self.angle_var = (min(self.angle), max(self.angle))
-
-    @staticmethod
-    def overlap_interval(int_1, int_2):
-        '''
-        calculate the overlaped interval of 2 intervals ([0] for min, [1] for max)
-        '''
-        return max(0, min(int_1[1], int_2[1]) - max(int_1[0], int_2[0]))
-
-    @staticmethod
-    def xy_intersection(box1, box2):
-        '''
-        calculate the intersection of 2 bbox using the cartesian coord
-        '''
-        sec_x = Det_Bounding_Box.overlap_interval(box1.x_var, box2.x_var)
-        sec_y = Det_Bounding_Box.overlap_interval(box1.y_var, box2.y_var)
-        return sec_x * sec_y
-
-    @staticmethod
-    def elem_intersection(box1, box2):
-        '''
-        calculate the intersection of elements contained by bboxes
-        '''
-        return len(set.intersection(box1.elem, box2.elem))
-
-
 class Bbox_Metric_Record(Classif_Metric_Record):
     '''
     detection regarded as multiple classification + bbox localization
@@ -480,10 +370,10 @@ class Bbox_Metric_Record(Classif_Metric_Record):
         # configure elem type
         assert elem in ['pixel', 'point', 'realxy']
         if elem == 'point':
-            self.bi_intersection = lambda b1, b2: Det_Bounding_Box.elem_intersection(b1, b2)
+            self.bi_intersection = lambda b1, b2: utils.Det_Bounding_Box.elem_intersection(b1, b2)
             self.get_size = lambda b: max(b.elem_size, 1)  # in case of empty set (divided by 0)
         else:
-            self.bi_intersection = lambda b1, b2: Det_Bounding_Box.xy_intersection(b1, b2)
+            self.bi_intersection = lambda b1, b2: utils.Det_Bounding_Box.xy_intersection(b1, b2)
             self.get_size = lambda b: b.size
         self.elem = elem
 
@@ -557,7 +447,7 @@ class Bbox_Metric_Record(Classif_Metric_Record):
         # no intersection & at least farther & angle overlaped 
         return self.bi_intersection(fixed_bbox, bbox) < 1e-5 and \
                fixed_bbox.dist_var[0] < bbox.dist_var[0] and \
-               Det_Bounding_Box.overlap_interval(fixed_bbox.angle_var, bbox.angle_var) / (bbox.angle_var[1] - bbox.angle_var[0]) > self.filter_mode['blockage']['overlap_threshold']
+               utils.calc_overlap_interval(fixed_bbox.angle_var, bbox.angle_var) / (bbox.angle_var[1] - bbox.angle_var[0]) > self.filter_mode['blockage']['overlap_threshold']
 
     def __blockage_filtering(self, pred_bboxlist, label_bboxlist):
         # use polar coord for convenience
@@ -707,8 +597,8 @@ class Bbox_Metric_Record(Classif_Metric_Record):
         '''
         accumulate the result over the whole dataset
         '''
-        pred_list = [Det_Bounding_Box(bbox) for bbox in pred_bboxlist]
-        label_list = [Det_Bounding_Box(bbox) for bbox in label_bboxlist]
+        pred_list = [utils.Det_Bounding_Box(bbox) for bbox in pred_bboxlist]
+        label_list = [utils.Det_Bounding_Box(bbox) for bbox in label_bboxlist]
         self._filtering_bbox(pred_list, label_list)
 
         for n_idx in self.class_name:  # idx of name
@@ -795,8 +685,8 @@ class Tracking_SOT_Record(Metric_Record):
         lost_target = 0
         iou_sum = 0
         for label_box, pred_box in zip(label, pred):
-            label_box = Bounding_Box(label_box, def_type='xywh')
-            pred_box = Bounding_Box(pred_box, def_type='xywh')
+            label_box = utils.Bounding_Box(label_box, def_type='xywh')
+            pred_box = utils.Bounding_Box(pred_box, def_type='xywh')
             iou = pred_box.IoU(label_box)
             iou_sum += iou
             if iou == 0:

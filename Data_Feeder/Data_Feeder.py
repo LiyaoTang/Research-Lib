@@ -13,7 +13,10 @@ import numpy as np
 import pandas as pd
 import tensorflow as tf
 
-from . import utils
+root_dir = '../'
+sys.path.append(root_dir)
+import Utilities as utils
+
 from .base import TFRecord_Feeder, TF_CSV_Feeder, TF_TXT_Feeder, Gen_Feeder, Feeder
 from collections import defaultdict
 
