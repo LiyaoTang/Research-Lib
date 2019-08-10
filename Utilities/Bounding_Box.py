@@ -27,7 +27,7 @@ def xywh_to_xyxy_int(xywh, dtype=int):
     '''
     w_2 = xywh[2] / 2
     h_2 = xywh[3] / 2
-    # compensate for jitter
+    # compensate for jitter (grounding due to int conversion in xyxy_to_xywh)
     return np.ceil([xywh[0] - w_2, xywh[1] - h_2, xywh[0] + w_2, xywh[1] + h_2]).astype(dtype)
 
 def xywh_to_xyxy_float(xywh, dtype=float):

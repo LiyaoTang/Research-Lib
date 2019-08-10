@@ -789,7 +789,7 @@ class Track_Feeder(Feeder):
         # additionally provide network with pixel location [i,j] at each location
         img_shape = np.array(img.shape)
         mask = self._get_mask(img_shape, prev_box)
-        Y, X = np.meshgrid(img_shape[0], img_shape[1])
+        Y, X = np.meshgrid(np.arange(img_shape[0]), np.arange(img_shape[1]))
         img = np.concatenate([img, mask, Y[..., np.newaxis], X[..., np.newaxis]], axis=-1)
         return img, cur_box
 

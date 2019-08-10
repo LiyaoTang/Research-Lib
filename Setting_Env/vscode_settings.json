@@ -11,7 +11,7 @@
     "editor.largeFileOptimizations": true,
 
     "C_Cpp.clang_format_style": "file",
-    "C_Cpp.default.includePath": ["/usr/local/include", "/usr/include",],
+    "C_Cpp.default.includePath": ["/usr/local/include", "/usr/include", "${workspaceFolder}/**",],
 
     "python.formatting.provider": "autopep8",
     "python.formatting.autopep8Path": "~/.local/bin/autopep8",
@@ -29,4 +29,5 @@
     "[latex]": {
         "editor.wordWrap": "on"
     },
+    "latex-workshop.view.pdf.viewer": "tab",
 }
