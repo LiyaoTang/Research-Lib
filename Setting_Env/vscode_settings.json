@@ -6,20 +6,22 @@
     },
 
     "editor.fontSize": 16,
-    "editor.defaultFormatter": "xaver.clang-format",
     "editor.formatOnType": true,
     "editor.largeFileOptimizations": true,
+    "editor.defaultFormatter": "himanoa.Python-autopep8",
 
+    "[cpp]": {
+        "editor.defaultFormatter": "xaver.clang-format",
+    },
     "C_Cpp.clang_format_style": "file",
     "C_Cpp.default.includePath": ["/usr/local/include", "/usr/include", "${workspaceFolder}/**",],
 
     "python.formatting.provider": "autopep8",
     "python.formatting.autopep8Path": "~/.local/bin/autopep8",
     "python.formatting.autopep8Args": ["--global-config=~/Research-Lib/Setting_Env/format_python_autopep8"],
-    "python.terminal.activateEnvironment": false,
-    "python.linting.enabled": false,
-    "python.autoComplete.addBrackets": true,
+    "python.linting.enabled" : false,
     "python.jediEnabled": true,
+    "python.terminal.activateEnvironment": false,
     "python.dataScience.sendSelectionToInteractiveWindow": false,
 
     "terminal.integrated.shell.linux": "/bin/bash",
@@ -30,4 +32,5 @@
         "editor.wordWrap": "on"
     },
     "latex-workshop.view.pdf.viewer": "tab",
+    "C_Cpp.updateChannel": "Insiders",
 }

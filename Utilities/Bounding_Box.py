@@ -10,7 +10,7 @@ module: utilities for bounding box processing, including:
 import numpy as np
 
 
-def xyxy_to_xywh(xyxy, dtype=int):
+def xyxy_to_xywh_int(xyxy, dtype=int):
     '''
     convert [xmin, ymin, xmax, ymax] -> [x-center, y-center, w, h]
     xy in screen coord => x/y as matrix col/row idx
@@ -18,8 +18,16 @@ def xyxy_to_xywh(xyxy, dtype=int):
     xc, yc = (xyxy[0] + xyxy[2]) / 2, (xyxy[1] + xyxy[3]) / 2  # xmin, ymin, xmax, ymax
     h = xyxy[3] - xyxy[1]
     w = xyxy[2] - xyxy[0]
-    return np.array([xc, yc, w, h], dtype=dtype)
-        
+    return np.floor([xc, yc, w, h]).astype(dtype)
+
+def xyxy_to_xywh_float(xyxy, dtype=float):
+    xc, yc = (xyxy[0] + xyxy[2]) / 2, (xyxy[1] + xyxy[3]) / 2  # xmin, ymin, xmax, ymax
+    h = xyxy[3] - xyxy[1]
+    w = xyxy[2] - xyxy[0]
+    return np.floor([xc, yc, w, h]).astype(dtype)
+xyxy_to_xywh = xyxy_to_xywh_int  # alias
+
+
 def xywh_to_xyxy_int(xywh, dtype=int):
     '''
     convert [x-center, y-center, w, h] -> [xmin, ymin, xmax, ymax]
@@ -39,13 +47,14 @@ xywh_to_xyxy = xywh_to_xyxy_int  # alias
 
 def calc_overlap_interval(int1, int2):
     '''
-    calculate the overlaped interval of 2 intervals ([0] for min, [1] for max)
+    calculate the overlaped interval of 2 intervals ([0] for min val, [1] for max val)
     '''
-    return max(0, min(int1[1], int2[1]) - max(int1[0], int2[0]))
+    return np.maximum(0, np.minimum(int1[1], int2[1]) - np.maximum(int1[0], int2[0]))
 
 def calc_IoU(box1, box2):
     '''
     calculate the intersection over union for 2 xyxy bbox
+    (may broadcast to 2 box arr)
     '''
     int_x = calc_overlap_interval((box1[0], box1[2]), (box2[0], box2[2]))
     int_y = calc_overlap_interval((box1[1], box1[3]), (box2[1], box2[3]))
@@ -55,7 +64,6 @@ def calc_IoU(box1, box2):
     area2 = (box2[2] - box2[0]) * (box2[3] - box2[1])
     union = area1 * area2 - intersection
     return union / intersection
-
 
 class Bounding_Box(object):
     '''

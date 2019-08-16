@@ -738,7 +738,7 @@ class Track_Feeder(Feeder):
 
         assert config['bbox_encoding'] in ['crop', 'mask', 'mesh']
         if config['bbox_encoding'] == 'crop':
-            self.crop_size = None
+            self.crop_size = None  # output size of crop (model input size)
             self._encode_bbox = self._encode_bbox_crop  # encode bbox to both input img & label
             self.decode_bbox = self._decode_bbox_crop  # decode pred to bbox on full image
             self._get_frame_size_from_ref = lambda ref: tuple(self.crop_size, self.crop_size)
@@ -793,23 +793,25 @@ class Track_Feeder(Feeder):
         img = np.concatenate([img, mask, Y[..., np.newaxis], X[..., np.newaxis]], axis=-1)
         return img, cur_box
 
-    def _encode_bbox_crop(self, img, prev_box, cur_box):
+    def _encode_bbox_crop(self, img, crop_region, cur_box, pad_val=0):
+        # crop_region: xywh
         img_shape = np.array(img.shape)
-        x, y, w, h = self._xyxy_to_xywh(prev_box)  # prev_box from original label (xyxy, e.g. imagenet)
+        crop_shape = (crop_region[2], crop_region[3], img_shape[-1])
+        cropped_img = np.zeros(shape=crop_shape) + pad_val
 
-        extended_bbox = np.array([x - w, y - h, x + w, y + h])  # xyxy (doubled in w-h)
-        clipped_bbox = np.clip(extended_bbox, 0, img_shape[[1, 0, 1, 0]]).astype(int)  # the actual region to crop
+        # desired & actual crop region (xyxy)
+        desired_region = self._xywh_to_xyxy(crop_region)
+        actual_region = np.clip(desired_region, 0, img_shape[[1, 0, 1, 0]]).astype(int)
 
-        crop_shape = (2 * h, 2 * w, img_shape[-1])
-        cropped_img = np.zeros(shape=crop_shape)
-        # convert coord for actual crop region (clipped_bbox): from img coord to cropped_img coord
-        xyxy_in_crop = clipped_bbox - extended_bbox[[0, 1, 0, 1]]
+        # convert coord for actual crop region: from img coord to cropped_img (desired region) coord
+        xyxy_in_crop = actual_region - desired_region[[0, 1, 0, 1]]
 
         # crop on original img
-        [xmin, ymin, xmax, ymax] = clipped_bbox
+        [xmin, ,ymin xmax, ymax] = actual_region
         cropped_img[xyxy_in_crop[1]:xyxy_in_crop[3], xyxy_in_crop[0]:xyxy_in_crop[2]] = img[ymin:ymax, xmin:xmax]
 
-        label_box = cur_box - extended_bbox[[0, 1, 0, 1]]  # originated as [x,y,x,y] - [xmin,ymin,xmin,ymin]
+        # convert cur_box (current label) to the crop coord
+        label_box = cur_box - desired_region[[0, 1, 0, 1]]  # originated as [x,y,x,y] - [xmin,ymin,xmin,ymin]
         label_box[[0, 2]] = label_box[[0, 2]] / crop_shape[1] * self.crop_size  # normalized as x / w ratio, then rescale
         label_box[[1, 3]] = label_box[[1, 3]] / crop_shape[0] * self.crop_size  # normalized as y / h ratio, then rescale
         return self.img_lib.resize(cropped_img, (self.crop_size, self,crop_size)), label_box
@@ -921,6 +923,11 @@ class Track_Re3_Feeder(Track_Feeder):
             input_batch.append(cur_input)
             label_batch.append(cur_label)
         return input_batch, label_batch
+
+    def _encode_bbox_crop(self, img, prev_box, cur_box):
+        x, y, w, h = self._xyxy_to_xywh(prev_box)  # prev_box from pred/label in xyxy
+        crop_region = [x, y, 2 * w, 2 * h]
+        return super()._encode_bbox_crop(img, crop_region, cur_box, pad_val=0)
 
     def _get_input_label_example_crop(self, track_ref):
         # generate pair of images of time [t, t-1] as net input at time t
@@ -1200,3 +1207,12 @@ class Track_Siam_Feeder(Track_Feeder):
 
         self.config['use_inference_prob'] = _use_inference_prob
         self.num_unrolls = _num_unrolls
+
+    def _encode_bbox_crop(self, img, prev_box, cur_box):
+        x, y, w, h = self._xyxy_to_xywh(prev_box)  # prev_box from pred/label in xyxy
+        context_amount = (w + h) / 2
+        w += context_amount
+        h += context_amount
+        norm_sz = np.sqrt(w * h)  # convert box into square region (after extended with some context space)
+        crop_region = [x, y, norm_sz, norm_sz]
+        return super()._encode_bbox_crop(img, crop_region, cur_box, pad_val=np.mean(img, axis=(0, 1)))
