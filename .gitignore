@@ -14,7 +14,4 @@ Data
 **/Summary
 
 # IDE
-.vscode
-
-# # cmake build
-# **/build
+**/.vscode
