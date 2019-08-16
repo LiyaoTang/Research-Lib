@@ -1,0 +1,3 @@
+/home/tangliyao/Research-Lib/Interface/pytorch/build/CMakeFiles/edit_cache.dir
+/home/tangliyao/Research-Lib/Interface/pytorch/build/CMakeFiles/rebuild_cache.dir
+/home/tangliyao/Research-Lib/Interface/pytorch/build/CMakeFiles/torch_model.dir

@@ -6,22 +6,22 @@ ColumnLimit: 0
 AccessModifierOffset: -4
 
 IndentWidth: 4
-NamespaceIndentation: All
+NamespaceIndentation: None
 AlignConsecutiveAssignments: true
 
-BreakBeforeBraces: false
+# BreakBeforeBraces: false
 BraceWrapping:
   AfterEnum: true
   AfterStruct: true
   AfterClass: true
-  SplitEmptyFunction: true
   AfterControlStatement: false
   AfterNamespace: false
   AfterFunction: true
   AfterUnion: true
-  AfterExternBlock: false
+  # AfterExternBlock: false
   BeforeCatch: false
   BeforeElse: false
-  SplitEmptyRecord: true
-  SplitEmptyNamespace: true
+  # SplitEmptyRecord: true
+  # SplitEmptyFunction: true
+  # SplitEmptyNamespace: true
 

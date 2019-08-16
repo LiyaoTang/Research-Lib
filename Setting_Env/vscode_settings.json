@@ -13,8 +13,14 @@
     "[cpp]": {
         "editor.defaultFormatter": "xaver.clang-format",
     },
+    "C_Cpp.clang_format_path": "/usr/bin/clang-6.0",
     "C_Cpp.clang_format_style": "file",
-    "C_Cpp.default.includePath": ["/usr/local/include", "/usr/include", "${workspaceFolder}/**",],
+    "C_Cpp.default.includePath": ["/usr/include",
+                                  "/usr/local/lib",
+                                  "/usr/local/include",
+                                  "/usr/local/include/libtorch/**",
+                                  "${workspaceFolder}/**",
+                                  "${PATH}"],
 
     "python.formatting.provider": "autopep8",
     "python.formatting.autopep8Path": "~/.local/bin/autopep8",
@@ -33,4 +39,5 @@
     },
     "latex-workshop.view.pdf.viewer": "tab",
     "C_Cpp.updateChannel": "Insiders",
+    "cmake.configureOnOpen": false,
 }

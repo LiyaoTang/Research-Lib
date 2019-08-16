@@ -1,0 +1,6 @@
+# google lib
+gtest
+protobuf
+
+# torch
+libtorch

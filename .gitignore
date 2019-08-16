@@ -15,3 +15,6 @@ Data
 
 # IDE
 .vscode
+
+# # cmake build
+# **/build

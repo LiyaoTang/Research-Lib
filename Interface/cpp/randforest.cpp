@@ -1,17 +1,17 @@
 #include "randforest.hpp"
 #include "models/rsds-sk-randforest.h"
 
-namespace models{
-namespace rsds{
-namespace carpoint{
+namespace models {
+namespace rsds {
+namespace carpoint {
 
 /** 
  * definition for randforest carpoint
  * **/
-CarPoint::CarPoint(): base::RandForest(2, 8, 80) {}
+CarPoint::CarPoint() : base::RandForest(2, 8, 80) {}
 CarPoint::~CarPoint() {}
 
-void CarPoint::collect_pred(const std::vector<double> &input, std::vector<double> &classes){
+void CarPoint::collect_pred(const std::vector<double> &input, std::vector<double> &classes) {
     // vector to cnt pred from each tree
     classes[predict_0(input)]++;
     classes[predict_1(input)]++;
@@ -96,6 +96,6 @@ void CarPoint::collect_pred(const std::vector<double> &input, std::vector<double
     return;
 }
 
-} // namespace carpoint
-} // namespace rsds
-} // namepsace models
+}  // namespace carpoint
+}  // namespace rsds
+}  // namepsace models
