@@ -55,14 +55,14 @@ class Anchor_Box(object):
         self.anchors = np.zeros((self.anchor_num, 4), dtype=np.float32)
         cnt = 0
         for r in self.ratios:
-            sqrt_r = np.sqrt(r)
+            sqrt_r = np.sqrt(r)  # convert to specified w-h ratios
             ws = int(self.stride / sqrt_r)
             hs = int(self.stride * sqrt_r)
 
             for s in self.scales:
                 w = ws * s
                 h = hs * s
-                self.anchors[cnt] = xywh_to_xyxy([0, 0, w, h])  # xywh (center at origin) -> xyxy
+                self.anchors[cnt] = np.array([0, 0, w, h])  # xywh (center at origin)
                 cnt += 1
 
     # def generate_anchors_volume(self, img_center, size):
@@ -114,9 +114,9 @@ class Anchor_Box(object):
     #                            np.stack([cx, cy, w, h]).astype(np.float32))
     #     return self.anchors_volume
 
-    def generate_anchors_volume(self, size, img_center=0):
+    def generate_anchors_volume(self, size, img_center=(0,0)):
         '''
-        img_center: model input image center (may left shifting afterwards)
+        img_center: model input image center, default to (0,0) for shifting afterwards
         size: model output volumn size
         => prepare anchors for a (newly) given input-output pair
         '''
@@ -125,16 +125,15 @@ class Anchor_Box(object):
         self.img_center = img_center
         self.size = size
 
-        anchor = xyxy_to_xywh(self.anchors)  # xywh, [anchor_num, 4]
-        # each anchor repeated size*size, [anchor_num*size*size, 4]
-        anchor = np.tile(anchor, size * size).reshape((-1, 4))
+        # each xywh anchor repeated size*size, [anchor_num*size*size, 4]
+        anchor = np.tile(self.anchors, size * size).reshape((-1, 4))
 
         # find offset vec of: anchor center -> img center
-        ori = img_center - (size // 2) * self.stride
+        ori = np.array(img_center) - (size // 2) * self.stride
         # create xy-idx for each anchor position (idx under img coord)
-        # align the center of score map to be at origin of img (top-left)
-        idx_arr = np.array(range(size)) * self.stride + ori
-        xx, yy = np.meshgrid(idx_arr, idx_arr)
+        # align the center of score map (default to be at origin of img (top-left))
+        idx_arr = np.array(range(size)) * self.stride
+        xx, yy = np.meshgrid(idx_arr + ori[0], idx_arr + ori[1])
         # x/y-idx of all anchor location in 1D & repeated for anchor_num times & further flatten
         # => [size*size*anchor_num]
         xx = np.tile(xx.flatten(), (anchor_num, 1)).flatten()
