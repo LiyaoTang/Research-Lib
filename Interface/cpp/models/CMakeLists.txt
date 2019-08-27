@@ -6,3 +6,6 @@ add_library(${PROJECT_NAME} INTERFACE ${_SRCS})
 # make sure the compiler can find include files for our library
 # when other libraries or executables link to this library
 target_include_directories (${PROJECT_NAME} INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
+
+# add on demand
+add_subdirectory(tracker)

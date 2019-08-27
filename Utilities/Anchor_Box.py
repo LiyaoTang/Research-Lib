@@ -11,14 +11,16 @@ class Anchor_Box(object):
     '''
     generate anchor boxes based on 
         stride: predefined anchor size=stride^2 => each anchor mapped back to stride*stride region on input
+                => network downsample rate
         ratios: =height/width => h=stride*sqrt(r), w=stride/sqrt(r)
         scales: a list of scales for same height-width ratio box
         size: model output volumn size
         img_center: model input image center
+        channel_order: NHWC for tf, NCHW for pytorch/cuDNN
     => prepare for output volume = [size, size, anchor_num*4],
     '''
 
-    def __init__(self, stride, ratios, scales, img_center=0, size=0,
+    def __init__(self, stride, ratios, scales, img_center=0, size=0, channel_order='CHW'
                  iou_thr=(0.3, 0.6), pos_num=16, neg_num=16, total_num=64):
         super(Anchor_Box, self).__init__()
         self.stride = stride
@@ -26,6 +28,14 @@ class Anchor_Box(object):
         self.scales = scales
         self.img_center = 0
         self.size = 0
+        
+        assert channel_order[-3:] in ['CHW', 'HWC']  # in case of NHWC/NCHW
+        channel_order = channel_order[-3:]
+        if channel_order == 'CHW':
+            self._decompose_box = lambda b: b[0], b[1], b[2], b[3]
+        else:
+            self._decompose_box = lambda b: b[..., 0], b[..., 1], b[..., 2], b[..., 3]
+
         self.iou_thr = sorted((iou_thr, iou_thr) if type(iou_thr) is float else iou_thr)
         assert len(self.iou_thr) == 2
         
@@ -38,7 +48,7 @@ class Anchor_Box(object):
         
         self._prepare_anchors()
         if img_center > 0 and size > 0:
-            self._prepare_anchors_volume(img_center, size)
+            self.generate_anchors_volume(img_center, size)
 
     def _prepare_anchors(self):
         # prepare anchors based on predefined configuration
@@ -52,58 +62,90 @@ class Anchor_Box(object):
             for s in self.scales:
                 w = ws * s
                 h = hs * s
-                self.anchors[cnt] = [-w * 0.5, -h * 0.5, w * 0.5, h * 0.5]  # xywh (center at origin) -> xyxy
+                self.anchors[cnt] = xywh_to_xyxy([0, 0, w, h])  # xywh (center at origin) -> xyxy
                 cnt += 1
 
-    def _prepare_anchors_volume(self, img_center, size):
+    # def generate_anchors_volume(self, img_center, size):
+    #     '''
+    #     img_center: model input image center
+    #     size: model output volumn size
+    #     => prepare anchors for a (newly) given input-output pair
+    #     '''
+    #     if self.img_center == img_center and self.size == size:
+    #         return self.anchors_volume
+    #     self.img_center = img_center
+    #     self.size = size
+
+    #     # map center of output size back to input size & calc the offset of center
+    #     # => anchor sitting side-by-side, with each anchor covering pixel num = self.stride (on input image)
+    #     ori = img_center - size // 2 * self.stride
+    #     # a0x = img_center - size // 2 * self.stride
+    #     # ori = np.array([a0x] * 4, dtype=np.float32)  # starting origin = img_center
+    #     zero_anchors = self.anchors + ori  # shift zero-centered anchors to be centered at img_center
+        
+    #     # each [anchor_num], an arr of x1 y1 x2 y2 (of all anchors centered at img_center)
+    #     x1 = zero_anchors[:, 0]
+    #     y1 = zero_anchors[:, 1]
+    #     x2 = zero_anchors[:, 2]
+    #     y2 = zero_anchors[:, 3]
+        
+    #     # extend 2 new axis to -1 dimension => col arr [anchor_num, 1, 1]
+    #     x1, y1, x2, y2 = map(lambda x: x.reshape(self.anchor_num, 1, 1), [x1, y1, x2, y2])
+    #     cx, cy, w, h = xyxy_to_xywh([x1, y1, x2, y2])
+
+    #     # new axis at first dim => 1 row to broadcast with cx-cy (3 rows)
+    #     # => scatter anchor by stride (onto the input img)
+    #     disp_x = np.arange(0, size).reshape(1, 1, -1) * self.stride  # [1, 1   ,   size]
+    #     disp_y = np.arange(0, size).reshape(1, -1, 1) * self.stride  # [1, size,   1   ]
+
+    #     # shift the center xy: row + col & broadcast
+    #     cx = cx + disp_x  # [anchor_num, 1       , size]
+    #     cy = cy + disp_y  # [anchor_num, size    , 1   ]
+
+    #     # broadcast
+    #     zero = np.zeros((self.anchor_num, size, size))
+    #     # cx: broadcast to replicate row along axis-0 (duplicate rows & same num clong the col)
+    #     # cy: broadcast to replicate scalar along axis-1 (duplicate cols & same num along the row)
+    #     cx, cy, w, h = map(lambda x: x + zero, [cx, cy, w, h])
+    #     x1, y1, x2, y2 = xywh_to_xyxy([cx, cy, w, h], float)
+
+    #     # provide both xyxy & xywh - [4, anchor_num, size, size]
+    #     self.anchors_volume = (np.stack([x1, y1, x2, y2]).astype(np.float32),
+    #                            np.stack([cx, cy, w, h]).astype(np.float32))
+    #     return self.anchors_volume
+
+    def generate_anchors_volume(self, size, img_center=0):
         '''
-        img_center: model input image center
+        img_center: model input image center (may left shifting afterwards)
         size: model output volumn size
-        => prepare anchors for a (newly) given input-output
+        => prepare anchors for a (newly) given input-output pair
         '''
         if self.img_center == img_center and self.size == size:
             return self.anchors_volume
         self.img_center = img_center
         self.size = size
 
-        # map center of output size back to input size & calc the offset of center
-        # => anchor sitting side-by-side, with each anchor covering pixel num = self.stride (on input image)
-        a0x = img_center - size // 2 * self.stride
-        ori = np.array([a0x] * 4, dtype=np.float32)  # starting origin = img_center
-        zero_anchors = self.anchors + ori  # shift zero-centered anchors to be centered at img_center
-        
-        # arr of x1 y1 x2 y2 (of all anchors centered at img_center)
-        x1 = zero_anchors[:, 0]
-        y1 = zero_anchors[:, 1]
-        x2 = zero_anchors[:, 2]
-        y2 = zero_anchors[:, 3]
-        
-        # extend 2 new axis to -1 dimension => col arr [anchor_num, 1, 1]
-        x1, y1, x2, y2 = map(lambda x: x.reshape(self.anchor_num, 1, 1), [x1, y1, x2, y2])
-        cx, cy, w, h = xyxy_to_xywh([x1, y1, x2, y2])
+        anchor = xyxy_to_xywh(self.anchors)  # xywh, [anchor_num, 4]
+        # each anchor repeated size*size, [anchor_num*size*size, 4]
+        anchor = np.tile(anchor, size * size).reshape((-1, 4))
 
-        # new axis at first dim => 1 row to broadcast with cx-cy (3 rows)
-        # => scatter anchor by stride (onto the input img)
-        disp_x = np.arange(0, size).reshape(1, 1, -1) * self.stride  # [1, 1       , size]
-        disp_y = np.arange(0, size).reshape(1, -1, 1) * self.stride  # [1, size,   1     ]
-
-        # shift the center xy: row + col & broadcast
-        cx = cx + disp_x  # [anchor_num, 1       , size]
-        cy = cy + disp_y  # [anchor_num, size    , 1   ]
-
-        # broadcast
-        zero = np.zeros((self.anchor_num, size, size))
-        # cx: broadcast to replicate row along axis-0 (duplicate rows & same num clong the col)
-        # cy: broadcast to replicate scalar along axis-1 (duplicate cols & same num along the row)
-        cx, cy, w, h = map(lambda x: x + zero, [cx, cy, w, h])
-        x1, y1, x2, y2 = xywh_to_xyxy([cx, cy, w, h], float)
-
-        # provide both xyxy & xywh - [4, anchor_num, size, size]
-        self.anchors_volume = (np.stack([x1, y1, x2, y2]).astype(np.float32),
-                               np.stack([cx, cy, w, h]).astype(np.float32))
+        # find offset vec of: anchor center -> img center
+        ori = img_center - (size // 2) * self.stride
+        # create xy-idx for each anchor position (idx under img coord)
+        # align the center of score map to be at origin of img (top-left)
+        idx_arr = np.array(range(size)) * self.stride + ori
+        xx, yy = np.meshgrid(idx_arr, idx_arr)
+        # x/y-idx of all anchor location in 1D & repeated for anchor_num times & further flatten
+        # => [size*size*anchor_num]
+        xx = np.tile(xx.flatten(), (anchor_num, 1)).flatten()
+        yy = np.tile(yy.flatten(), (anchor_num, 1)).flatten()
+        # replace original idx (xy) in xywh anchors
+        # (same anchor for size*size times <-> idx of size*size for anchor_num times)
+        anchor[:, 0], anchor[:, 1] = xx.astype(np.float32), yy.astype(np.float32)
+        self.anchors_volume = anchor
         return self.anchors_volume
 
-    def _select(position, keep_num=16):
+    def _select(self, position, keep_num=16):
         num = position[0].shape[0]  # position: idx (list) for np arr
         if num <= keep_num:
             return position, num
@@ -112,7 +154,7 @@ class Anchor_Box(object):
         slt = slt[:keep_num]
         return tuple(p[slt] for p in position), keep_num
 
-    def generate_anchors(self, target, img_center, size, neg=False):
+    def anchor_target(self, target, img_center, size, neg=False):
         '''
         generate anchors for given target (label bbox)
         size: output volume size
@@ -150,9 +192,9 @@ class Anchor_Box(object):
             return label_cls, label_loc, label_loc_weight, overlap  # no location for regression (as all negative or ignored)
 
         # get prepared anchors volume in xyxy & xywh
-        anchor_box, anchor_center = self._prepare_anchors_volume(img_center, size)
-        x1, y1, x2, y2 = anchor_box[0], anchor_box[1], anchor_box[2], anchor_box[3]
-        cx, cy, w, h = anchor_center[0], anchor_center[1], anchor_center[2], anchor_center[3]
+        anchor_center = self.generate_anchors_volume(img_center, size)
+        cx, cy, w, h = self._decompose_box(anchor_center)
+        x1, y1, x2, y2 = xywh_to_xyxy(cx, cy, w, h)
 
         label_loc[0] = (tcx - cx) / w  # calc xy offest to anchor (in ratio)
         label_loc[1] = (tcy - cy) / h
@@ -172,3 +214,19 @@ class Anchor_Box(object):
 
         label_cls[neg] = 0
         return label_cls, label_loc, label_loc_weight, overlap
+
+
+    def decode_bbox(self, pred, img_center, size):
+        '''
+        assume bbox prediction are based on current anchors
+        bbox: xywh prediction in CHW/HWC order
+        '''
+        anchor_center = self.generate_anchors_volume(img_center, size)
+        cx, cy, w, h = self._decompose_box(anchor_center)
+        x1, y1, x2, y2 = xywh_to_xyxy(cx, cy, w, h)
+        px, py, pw, ph = self._decompose_box(pred)
+        pred_box = [px * w + cx,
+                    py * h + cy,
+                    np.exp(pw) * w,
+                    np.exp(ph) * h]
+        return pred_box

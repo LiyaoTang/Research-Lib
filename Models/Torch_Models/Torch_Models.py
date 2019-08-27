@@ -19,7 +19,8 @@ class Siam_RPN(nn.Module):
     '''
     siam RPN tracker, with different backbone and rpn for choice
     '''
-    def __init__(self, config=None):
+
+    def __init__(self, anchor_generator, config=None):
         super(ModelBuilder, self).__init__()
         if config is None:
             config = {
@@ -50,8 +51,7 @@ class Siam_RPN(nn.Module):
             for in_ch, out_ch in zip(cfg['in_channels'], cfg['out_channels'])
         ]
         if len(self.neck) == 1:
-            self.neck = self.neck[0]
-            self.neck_forward = self.neck
+            self.neck_forward = self.neck[0]
         else:
             self.neck_forward = lambda feat_list: [nn(f) for nn, f in zip(self.neck, feat_list)]
 
@@ -61,12 +61,20 @@ class Siam_RPN(nn.Module):
         self.rpn = rpn(**cfg['kwargs'])
 
         self.config = config
+        # self.anchor_generator = anchor_generator # to generate anchors
 
-    def _template(self, z):
-        zf = self.backbone(z)  # extract template feature
-        if self.nect:
-            zf = self.neck_forward(zf)
-        self.zf = zf
+    def _extract_feature(self, input):
+        input_feat = self.backbone(input)
+        if self.neck:
+            input_feat = self.neck_forward(input_feat)
+        return input_feat
+
+    def _regress_box(self, zf, xf):
+        logit_cls, logit_loc = self.rpn(zf, xf)
+
+    # def _decode_anchor(self, pred_loc, img_center):
+    #     pred_loc = pred_loc.permute(1, 2, 3, 0).contiguous().view(4, -1)  # 
+    #     anchors = self.anchors + img_center # shift pre-computed anchors on 
 
     def inference_onestep(self, x):
         '''
@@ -75,25 +83,27 @@ class Siam_RPN(nn.Module):
         xf = self.backbone(x)
         if self.neck:
             xf = self.neck_forward(xf)
-        pred_cls, loc_pred = self.rpn(self.zf, xf)
-        return {'cls': pred_cls,
-                'loc': loc_pred,}
+        pred_cls, pred_loc = self.rpn(self.zf, xf)
+        # pred_box = self._decode_anchor(pred_loc)
 
-    def inference(self, xs, z):
-        '''
-        track over a sequence
-        '''
-        self._template(z)
-        rst = []
-        for x in xs:
-            rst.append(self.inference_onstep(x))
-        return rst
+        return {'cls': pred_cls,
+                'loc': pred_loc,}
+
+    # def inference(self, xs, z):
+    #     '''
+    #     track over a sequence
+    #     '''
+    #     self._template(z)
+    #     rst = []
+    #     for x in xs:
+    #         rst.append(self.inference_onestep(x))
+    #     return rst
 
     def _log_softmax(self, pred_cls):
-        b, a2, h, w = pred_cls.size()  # batch, anchor, h, w
-        pred_cls = pred_cls.view(b, 2, a2 // 2, h, w)  # each anchor a 2-channel binary classification
+        b, a, h, w = pred_cls.size()  # batch, anchor, h, w
+        pred_cls = pred_cls.view(b, 2, a // 2, h, w)  # each anchor a 2-channel binary classification
         pred_cls = pred_cls.permute(0, 2, 3, 4, 1).contiguous()  # move cls map to the last
-        pred_cls = F.log_softmax(pred_cls, dim=4) # log(softmax(x)), with better numerical stability
+        pred_cls = F.log_softmax(pred_cls, dim=4)  # log(softmax(x)), with better numerical stability
         return pred_cls
 
     def forward(self, data):
@@ -107,11 +117,10 @@ class Siam_RPN(nn.Module):
         label_loc_weight = data['label_loc_weight'].cuda()
 
         # forward for pred
-        zf = self.backbone(template)
-        xf = self.backbone(search)
-        if self.neck:
-            zf = self.nect_forward(zf)
-            xf = self.nect_forward(xf)
+        xf = self._extract_feature(search)
+        zf = self._extract_feature(template)
+        zf = zf[:,:, 4:11, 4:11]  # crop central 7x7
+
         logit_cls, logit_loc = self.rpn(zf, xf)
         pred_cls = self._log_softmax(logit_cls)
         pred_loc = logit_loc

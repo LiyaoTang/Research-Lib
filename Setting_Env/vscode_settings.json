@@ -2,7 +2,7 @@
     "files.exclude": {
         "**/__pycache__": true,
         "**/.ipynb_checkpoints": true,
-        "Data/*": true
+        "Data": true
     },
 
     "editor.fontSize": 16,
@@ -15,12 +15,13 @@
     },
     "C_Cpp.clang_format_path": "/usr/bin/clang-6.0",
     "C_Cpp.clang_format_style": "file",
-    "C_Cpp.default.includePath": ["/usr/include",
+    "C_Cpp.default.includePath": ["${workspaceFolder}/**",
+                                  "/usr/local/include/**",
+                                  "/usr/include",
                                   "/usr/local/lib",
-                                  "/usr/local/include",
-                                  "/usr/local/include/libtorch/**",
-                                  "${workspaceFolder}/**",
-                                  "${PATH}"],
+                                  "${LD_LIBRARY_PATH}"],
+    "C_Cpp.default.browse.path": ["${workspaceFolder}", "/usr/local/include"],
+    // "C_Cpp.updateChannel": "Insiders",
 
     "python.formatting.provider": "autopep8",
     "python.formatting.autopep8Path": "~/.local/bin/autopep8",
@@ -38,6 +39,4 @@
         "editor.wordWrap": "on"
     },
     "latex-workshop.view.pdf.viewer": "tab",
-    "C_Cpp.updateChannel": "Insiders",
-    "cmake.configureOnOpen": false,
 }

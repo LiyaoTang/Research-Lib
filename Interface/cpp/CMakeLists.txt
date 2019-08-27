@@ -4,3 +4,5 @@ set (CMAKE_CXX_STANDARD 11)
 PROJECT(cpp_model)
 
 add_subdirectory(models)
+add_subdirectory(base)
+add_subdirectory(utils)
