@@ -86,4 +86,24 @@ cv::Mat Anchor::generate_anchors_volume(int size, std::pair<int, int> img_center
     _anchors_volume = anchor;
     return _anchors_volume;
 }
+
+cv::Mat Anchor::decode_bbox(cv::Mat pred, std::pair<int, int> img_center, int size){
+    cv::Mat anchor_xywh = generate_anchors_volume(size, img_center);
+    cv::Mat anchor_xyxy = bbox::xywh_to_xyxy(anchor_xywh);
+    std::vector<cv::Mat> pred_box = _decompose_box(pred); // p-xywh
+
+    cv::Mat x = pred_box[0].mul(anchor_xywh.col[2]) + anchor_xywh.col(0);
+    cv::Mat y = pred_box[1].mul(anchor_xywh.col[3]) + anchor_xywh.col(1);
+    cv::Mat w, h;
+    cv::exp(pred_box[2], w);
+    cv::exp(pred_box[3], h);
+    w = w.mul(anchor_xywh.col(2));
+    h = h.mul(anchor_xywh.col(3));
+    
+    cv::Mat mat_arr[] = {x, y, w, h};
+    cv::Mat rst;
+    cv::hconcat(mat_arr, 4, rst);
+    return rst;
+}
+
 }

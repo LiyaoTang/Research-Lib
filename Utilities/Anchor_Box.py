@@ -191,7 +191,7 @@ class Anchor_Box(object):
             return label_cls, label_loc, label_loc_weight, overlap  # no location for regression (as all negative or ignored)
 
         # get prepared anchors volume in xyxy & xywh
-        anchor_center = self.generate_anchors_volume(img_center, size)
+        anchor_center = self.generate_anchors_volume(size, img_center)
         cx, cy, w, h = self._decompose_box(anchor_center)
         x1, y1, x2, y2 = xywh_to_xyxy(cx, cy, w, h)
 
@@ -220,7 +220,7 @@ class Anchor_Box(object):
         assume bbox prediction are based on current anchors
         bbox: xywh prediction in CHW/HWC order
         '''
-        anchor_center = self.generate_anchors_volume(img_center, size)
+        anchor_center = self.generate_anchors_volume(size, img_center)
         cx, cy, w, h = self._decompose_box(anchor_center)
         x1, y1, x2, y2 = xywh_to_xyxy(cx, cy, w, h)
         px, py, pw, ph = self._decompose_box(pred)

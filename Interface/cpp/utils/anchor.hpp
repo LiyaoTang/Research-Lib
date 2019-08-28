@@ -13,7 +13,7 @@ public:
            std::vector<double> iou_thr = std::vector<double>{0.3, 0.6},
            int pos_num = 16, int neg_num = 16, int total_num = 64, std::string channel_order = "CHW");
 
-    cv::Mat decode_bbox(cv::Mat pred, std::pair<double, double> img_center, size_t size);
+    cv::Mat decode_bbox(cv::Mat pred, std::pair<int, int> img_center, int size);
 
 private:
     int _stride;
