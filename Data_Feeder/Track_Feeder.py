@@ -410,7 +410,7 @@ class Track_Siam_Feeder(Track_Feeder):
                     start_idx = idx
             if idx != start_idx:  # finish the last track
                 ref_dict[size].append((start_idx, idx))
-            self.ref_dict = ref_dict
+            self.ref_dict = ref_dict  # needed for neg example retrieval
         
         data_ref = []  # construct [batch, ...], batch = [z-x, ...], z-x are original refs for positive pairs only
         for ref_list in ref_dict.values():
@@ -420,6 +420,7 @@ class Track_Siam_Feeder(Track_Feeder):
                     x_idx_max = min(z_idx + self.frame_range + 1, end_idx)
                     x_idx = np.random.randint(x_idx_min, x_idx_max)
                     data_ref.append((z_idx, x_idx))
+        self.data_ref = data_ref
 
     def _get_input_label_pair(self, ref):
         # generate a pair of batch
@@ -432,6 +433,7 @@ class Track_Siam_Feeder(Track_Feeder):
         return input_batch, label_batch
 
     def _sample_neg_example(self, size):
+        np.sample(self.ref_dict[size])
         pass
 
     def _get_input_label_pos_example(self, z_idx, x_idx):

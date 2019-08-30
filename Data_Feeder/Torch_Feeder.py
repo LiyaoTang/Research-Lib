@@ -11,13 +11,22 @@ import numpy as np
 from torch.utils.data import Dataset
 from . import Data_Feeder as feeder
 
-class Imagenet_VID_Feeder(Dataset):
+class Torch_Feeder(Dataset):
     '''
     wrapper from feeder to torch data.Dataset
     '''
 
-    def __init__(self, data_ref_path):
-        super(Imagenet_VID_Feeder, self).__init__()
-        self.feeder = feeder.Imagenet_VID_Feeder(data_ref_path, 30)
+    def __init__(self, feeder_list):
+        super(Torch_Feeder, self).__init__()
+        self.feeder_list = feeder_list
+        self.data_num = sum([len(f.data_ref) for f in feeder_list])
+
+    def __getitem__():
+        pass
+
+    def __len__():
+        pass
+
+
         
         

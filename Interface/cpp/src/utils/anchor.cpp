@@ -1,6 +1,8 @@
 #include "anchor.hpp"
 #include <iterator>
 #include <stdexcept>
+#include <string>
+#include "bbox.hpp"
 
 namespace utils {
 
@@ -10,6 +12,7 @@ Anchor::Anchor(int stride, std::vector<double> ratios, std::vector<double> scale
                                             _ratios(ratios),
                                             _scales(scales),
                                             _anchor_num(ratios.size() * scales.size()),
+                                            _iou_thr(iou_thr),
                                             _pos_num(pos_num),
                                             _neg_num(neg_num),
                                             _total_num(total_num),
@@ -24,7 +27,7 @@ Anchor::Anchor(int stride, std::vector<double> ratios, std::vector<double> scale
         throw std::invalid_argument("only NCHW/NHWC allowed (got \"" + _channel_order + "\" from \"" + channel_order + "\")");
     }
 
-    std::sort(iou_thr.begin(), iou_thr.end());
+    std::sort(_iou_thr.begin(), _iou_thr.end());
     if (_iou_thr.size() != 2) {
         std::ostringstream oss;
         std::copy(_iou_thr.begin(), _iou_thr.end() - 1, std::ostream_iterator<double>(oss, "-"));  // avoid trailing "-"
@@ -35,9 +38,9 @@ Anchor::Anchor(int stride, std::vector<double> ratios, std::vector<double> scale
     prepare_anchors();  // prepare anchor for one location
 }
 
-cv::Mat Anchor::prepare_anchors() {
-    _anchors = cv::Mat::zeros(cv::Size(_anchor_num, 4), _cv_type);
-    int cnt  = 0;
+void Anchor::prepare_anchors() {
+    cv::Mat cur_anchor = cv::Mat::zeros(1, 4, _cv_type);
+    int cnt            = 0;
     for (int i = 0; i < _ratios.size(); i++) {
         double sqrt_r = std::sqrt(_ratios[i]);
         int ws        = int(_stride / sqrt_r);
@@ -46,10 +49,14 @@ cv::Mat Anchor::prepare_anchors() {
         for (int j = 0; j < _scales.size(); j++) {
             int w = ws * _scales[j];
             int h = hs * _scales[j];
-            std::memcpy(_anchors.ptr<int>(cnt), std::vector<int>{0, 0, w, h}.data, _anchors.cols * sizeof(int));
+
+            cv::Mat anchor    = cv::Mat::zeros(1, 4, _cv_type);
+            anchor.at<int>(2) = w;
+            anchor.at<int>(3) = h;
+            _anchors.push_back(anchor);
+            cnt++;
         }
     }
-    return _anchors;  // xywh
 }
 
 cv::Mat Anchor::generate_anchors_volume(int size, std::pair<int, int> img_center) {
@@ -59,51 +66,57 @@ cv::Mat Anchor::generate_anchors_volume(int size, std::pair<int, int> img_center
     _img_center = img_center;
     _size       = size;
 
-    cv::Mat anchor = cv::repeat(_anchors, size * size, 1);  // [anchor_num*size*size, 4]
+    // explicitly mimic numpy behavior: duplicate each row separately, instead of the whole arr
+    cv::Mat anchor_vol_arr[_anchor_num];
+    for (int i = 0; i < _anchor_num; i++) {
+        anchor_vol_arr[i] = cv::repeat(_anchors[i], size * size, 1);
+    }
+    cv::Mat anchor_vol;
+    cv::vconcat(anchor_vol_arr, _anchor_num, anchor_vol);  // [anchor_num*size*size, 4]
+
     std::pair<int, int> ori = {img_center.first - size / 2 * _stride,
                                img_center.second - size / 2 * _stride};
     // get mesh grid: xx, yy [size*size*anchor_num]
-    std::vector<int> range_x;
-    std::vector<int> range_y;
+    cv::Mat xx(1, size, _cv_type);
+    cv::Mat yy(1, size, _cv_type);
     for (int i = 0; i < size; i++) {
-        range_x.push_back(i * _stride + ori.first);
-        range_y.push_back(i * _stride + ori.second);
+        xx.at<int>(i) = i * _stride + ori.second;  // col
+        yy.at<int>(i) = i * _stride + ori.first;   // row
     }
-    cv::Mat xx(1, range_x.size(), _cv_type, range_x.data);
-    xx = cv::repeat(xx.t(), size, 1);
-    xx = cv::repeat(xx, _anchor_num, 1);
-    xx = xx.reshape(0, 1);
 
-    cv::Mat yy(1, range_y.size(), _cv_type, range_y.data);
-    yy = cv::repeat(yy, 1, size);
+    xx = cv::repeat(xx, size, 1);
+    xx = cv::repeat(xx, _anchor_num, 1);
+    xx = xx.reshape(0, size * size * _anchor_num);
+
+    yy = cv::repeat(yy.t(), 1, size);
     yy = cv::repeat(yy, _anchor_num, 1);
-    yy = yy.reshape(0, 1);
+    yy = yy.reshape(0, size * size * _anchor_num);
 
     // copy cx-cy
-    xx.copyTo(anchor.col(0));
-    yy.copyTo(anchor.col(1));
+    xx.copyTo(anchor_vol.col(0));
+    yy.copyTo(anchor_vol.col(1));
 
-    _anchors_volume = anchor;
+    _anchors_volume = anchor_vol;
     return _anchors_volume;
 }
 
-cv::Mat Anchor::decode_bbox(cv::Mat pred, std::pair<int, int> img_center, int size){
-    cv::Mat anchor_xywh = generate_anchors_volume(size, img_center);
-    cv::Mat anchor_xyxy = bbox::xywh_to_xyxy(anchor_xywh);
-    std::vector<cv::Mat> pred_box = _decompose_box(pred); // p-xywh
+cv::Mat Anchor::decode_bbox(cv::Mat pred, std::pair<int, int> img_center, int size) {
+    cv::Mat anchor_xywh           = generate_anchors_volume(size, img_center);
+    cv::Mat anchor_xyxy           = bbox::xywh_to_xyxy(anchor_xywh);
+    std::vector<cv::Mat> pred_box = _decompose_box(pred);  // p-xywh
 
-    cv::Mat x = pred_box[0].mul(anchor_xywh.col[2]) + anchor_xywh.col(0);
-    cv::Mat y = pred_box[1].mul(anchor_xywh.col[3]) + anchor_xywh.col(1);
+    cv::Mat x = pred_box[0].mul(anchor_xywh.col(2)) + anchor_xywh.col(0);
+    cv::Mat y = pred_box[1].mul(anchor_xywh.col(3)) + anchor_xywh.col(1);
     cv::Mat w, h;
     cv::exp(pred_box[2], w);
     cv::exp(pred_box[3], h);
     w = w.mul(anchor_xywh.col(2));
     h = h.mul(anchor_xywh.col(3));
-    
+
     cv::Mat mat_arr[] = {x, y, w, h};
     cv::Mat rst;
     cv::hconcat(mat_arr, 4, rst);
     return rst;
 }
 
-}
+}  // namespace utils

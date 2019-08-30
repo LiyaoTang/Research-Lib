@@ -39,4 +39,5 @@
         "editor.wordWrap": "on"
     },
     "latex-workshop.view.pdf.viewer": "tab",
+    "explorer.confirmDragAndDrop": false,
 }

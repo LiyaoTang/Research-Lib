@@ -1,5 +1,6 @@
 #pragma once
-#include "unit_test_base.h"
+#include "unit_test_base.hpp"
+#include <memory>
 
 namespace test {
     class UnitTestBuild : public UnitTestBase {

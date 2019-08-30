@@ -8,18 +8,17 @@ namespace torch_model {
 /** 
  * implementation: base class of torch tracker
  * **/
-Tracker::Tracker(std::string backbone_path, std::string rpn_path, std::string bbox_encoding, int input_size) : _input_size(input_size) {
+Tracker::Tracker(std::string model_path, std::string bbox_encoding, int input_size) {
     if (bbox_encoding == "crop") {
-        _encode_bbox = _encode_bbox_crop;
-        _decode_bbox = _decode_bbox_crop;
+        _encode_bbox = std::bind(&Tracker::_encode_bbox_crop, this, std::placeholders::_1, std::placeholders::_2);
+        // _decode_bbox = std::bind(&Tracker::_decode_bbox_crop, this, std::placeholders::_1, std::placeholders::_2);
     } else if (bbox_encoding == "mask") {
-        _encode_bbox = _encode_bbox_mask;
-        _decode_bbox = _decode_bbox_mask;
+        _encode_bbox = std::bind(&Tracker::_encode_bbox_mask, this, std::placeholders::_1, std::placeholders::_2);
+        // _decode_bbox = std::bind(&Tracker::_decode_bbox_mask, this, std::placeholders::_1, std::placeholders::_2);
     } else {
         throw;
     }
-    _extractor = torch::jit::load(backbone_path);
-    _rpn       = torch::jit::load(rpn_path);
+    _model = torch::jit::load(model_path);
 }
 
 void Tracker::track_init(cv::Mat img, cv::Rect box, int track_id) {
@@ -27,7 +26,7 @@ void Tracker::track_init(cv::Mat img, cv::Rect box, int track_id) {
     // in-place construction & assume 8-bit img (by specifying each element as Byte)
     torch::Tensor input_tensor = torch::from_blob(input.data, {1, input.channels(), input.rows, input.cols}, torch::kByte);
     std::vector<torch::IValue> model_input{input_tensor.to(torch::kFloat)};  // convert to accepted input
-    torch::Tensor model_out = _extractor.forward(model_input).toTensor();
+    torch::Tensor model_out = _model.forward(model_input).toTensor();
 
     _track_pool[track_id].first  = std::make_shared<torch::Tensor>(model_out);
     _track_pool[track_id].second = box;
@@ -38,16 +37,16 @@ cv::Mat Tracker::_encode_bbox_crop(cv::Mat img, cv::Rect prev_box) {  // siamRPN
     double sz      = std::sqrt((prev_box.width + context) * (prev_box.height + context));
     int x          = prev_box.x + prev_box.width / 2 - int(sz / 2);
     int y          = prev_box.y + prev_box.height / 2 - int(sz / 2);
-    cv::Rect crop_region(x, y, int(sz), int(sz));  // desired region
-    cv::Mat board(int(sz), int(sz), CV_8U);
-    if (x < 0 || y < 0 || x + int(sz) > img.cols || y + int(sz) > img.rows) {
+    cv::Rect crop_region(x, y, (int)sz, (int)sz);  // desired region
+    cv::Mat board((int)sz, (int)sz, CV_8U);
+    if (x < 0 || y < 0 || x + (int)sz > img.cols || y + (int)sz > img.rows) {
         // calc offset of actual crop within desired crop & pad for exceeded region
         board.setTo(cv::mean(img));
-        cv::Rect valid_area(x, y, int(sz), int(sz));  // actual region
+        cv::Rect valid_area(x, y, (int)sz, (int)sz);  // actual region
         if (x < 0) valid_area.x = -x;
         if (y < 0) valid_area.y = -y;
-        if (x + int(sz) > img.cols) valid_area.width -= x + int(sz) - img.cols;
-        if (y + int(sz) > img.rows) valid_area.height -= y + int(sz) - img.rows;
+        if (x + (int)sz > img.cols) valid_area.width -= x + (int)sz - img.cols;
+        if (y + (int)sz > img.rows) valid_area.height -= y + (int)sz - img.rows;
         img(crop_region).copyTo(board(valid_area));
     } else {
         img(crop_region).copyTo(board);
@@ -76,25 +75,22 @@ void Tracker::track(std::vector<cv::Mat>& img_list, cv::Rect& box, int track_id)
 }
 
 cv::Rect Tracker::track_onestep(cv::Mat img, int track_id) {
-    cv::Rect box = _track_pool[track_id].second;
+    auto tracked_data = _track_pool[track_id];
+    cv::Rect box      = tracked_data.second;
+    auto zf           = tracked_data.first;
 
     // extract on search region
-    cv::Mat input              = _encode_bbox(img, box);
-    torch::Tensor input_tensor = torch::from_blob(input.data, {1, input.channels(), input.rows, input.cols}, torch::kByte);
-    std::vector<torch::IValue> model_input{input_tensor.to(torch::kFloat)};  // convert to accepted input
-    torch::Tensor xf = _extractor.forward(model_input).toTensor();
-
-    // rpn(xf, zf) -> (box, cls)
-    std::vector<torch::IValue> rpn_input{xf, *(_track_pool[track_id].first)};
-    torch::Tensor rpn_out = _rpn.forward(rpn_input).toTensor();
-    rpn_out.slice(1, 0, 2);
-    _track_pool[track_id].second;
+    cv::Mat x_crop         = _encode_bbox(img, box);
+    torch::Tensor x_crop_t = torch::from_blob(x_crop.data, {1, x_crop.channels(), x_crop.rows, x_crop.cols}, torch::kByte);
+    // torch::IValue out      = _model.run_method("track", zf, x_crop_t);
+    // auto out_list = out.toTensorList();
+    // _track_pool[track_id].second = out_list[1];
+    // _track_pool[track_id].second = out_list[0];
 }
 
 void Tracker::track_fix(cv::Mat img, cv::Rect box, int track_id) {
     track_init(img, box, track_id);
 }
-};
 
 }  // namespace torch_model
 }  // namespace models

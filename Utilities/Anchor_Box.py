@@ -20,7 +20,7 @@ class Anchor_Box(object):
     => prepare for output volume = [size, size, anchor_num*4],
     '''
 
-    def __init__(self, stride, ratios, scales, img_center=0, size=0, channel_order='CHW'
+    def __init__(self, stride, ratios, scales, img_center=0, size=0, channel_order='CHW',
                  iou_thr=(0.3, 0.6), pos_num=16, neg_num=16, total_num=64):
         super(Anchor_Box, self).__init__()
         self.stride = stride
@@ -32,9 +32,9 @@ class Anchor_Box(object):
         assert channel_order[-3:] in ['CHW', 'HWC']  # in case of NHWC/NCHW
         channel_order = channel_order[-3:]
         if channel_order == 'CHW':
-            self._decompose_box = lambda b: b[0], b[1], b[2], b[3]
+            self._decompose_box = lambda b: (b[0], b[1], b[2], b[3])
         else:
-            self._decompose_box = lambda b: b[..., 0], b[..., 1], b[..., 2], b[..., 3]
+            self._decompose_box = lambda b: (b[..., 0], b[..., 1], b[..., 2], b[..., 3])
 
         self.iou_thr = sorted((iou_thr, iou_thr) if type(iou_thr) is float else iou_thr)
         assert len(self.iou_thr) == 2
@@ -136,8 +136,8 @@ class Anchor_Box(object):
         xx, yy = np.meshgrid(idx_arr + ori[0], idx_arr + ori[1])
         # x/y-idx of all anchor location in 1D & repeated for anchor_num times & further flatten
         # => [size*size*anchor_num]
-        xx = np.tile(xx.flatten(), (anchor_num, 1)).flatten()
-        yy = np.tile(yy.flatten(), (anchor_num, 1)).flatten()
+        xx = np.tile(xx.flatten(), (self.anchor_num, 1)).flatten()
+        yy = np.tile(yy.flatten(), (self.anchor_num, 1)).flatten()
         # replace original idx (xy) in xywh anchors
         # (same anchor for size*size times <-> idx of size*size for anchor_num times)
         anchor[:, 0], anchor[:, 1] = xx.astype(np.float32), yy.astype(np.float32)
