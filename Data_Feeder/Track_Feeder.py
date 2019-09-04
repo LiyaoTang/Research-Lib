@@ -398,7 +398,8 @@ class Track_Siam_Feeder(Track_Feeder):
         self._load_original_refs()
         
         if self.ref_dict is None:
-            ref_dict = defaultdict(lambda: [])  # img size -> [track ref, ...], track_ref=(start_idx, end_idx) of original ref
+            # img size -> [track ref, ...], track_ref=(start_idx, end_idx) of original ref
+            ref_dict = defaultdict(lambda: [])
             start_idx = 0
             start = self._get_global_trackid_from_ref(self._original_refs[start_idx])
             size = self._get_frame_size_from_ref(self._original_refs[start_idx])
@@ -412,31 +413,55 @@ class Track_Siam_Feeder(Track_Feeder):
                 ref_dict[size].append((start_idx, idx))
             self.ref_dict = ref_dict  # needed for neg example retrieval
         
-        data_ref = []  # construct [batch, ...], batch = [z-x, ...], z-x are original refs for positive pairs only
-        for ref_list in ref_dict.values():
+        # construct [batch, ...], batch = [z-x-id, ...], z-x are original refs for positive pairs only, id the idx in ref_dict
+        data_ref = []
+        for cur_size, ref_list in ref_dict.items():
+            example_list = [] # sample examples
             for start_idx, end_idx in ref_list:
                 for z_idx in range(start_idx, end_idx):  # use each img as template for at least once
                     x_idx_min = max(z_idx - self.frame_range, start_idx)
                     x_idx_max = min(z_idx + self.frame_range + 1, end_idx)
                     x_idx = np.random.randint(x_idx_min, x_idx_max)
-                    data_ref.append((z_idx, x_idx))
+                    example_list.append((z_idx, x_idx))
+            np.random.shuffle(example_list)
+            cnt = 0  # form batches (using constructed examples)
+            while cnt < len(example_list):
+                batch = example_list[cnt:cnt + self.pos_num]
+                cnt += self.pos_num
+                while len(batch) < self.pos_num:  # finish the last batch
+                    batch += example_list[0:self.pos_num - len(batch)]
+                batch.append(cur_size)  # to denote the size of each batch
+                data_ref.append(batch)
+        np.random.shuffle(data_ref)
         self.data_ref = data_ref
 
     def _get_input_label_pair(self, ref):
         # generate a pair of batch
         input_batch = []
         label_batch = []
-        for track_ref in ref:  # for ref in current batch
-            cur_input, cur_label = self._get_input_label_example(track_ref)
+
+        for (z_idx, x_idx) in ref[:-1]:  # for positive z-x pair in current batch
+            cur_input, cur_label = self._get_input_label_example(z_idx, x_idx)
             input_batch.append(cur_input)
             label_batch.append(cur_label)
+        for _ in range(self.batch_size - self.pos_num):  # sample neg z-x pair
+            z_idx, x_idx = self._sample_neg_example(ref[-1])
+            cur_input, cur_label = self._get_input_label_example(z_idx, x_idx)
+            input_batch.append(cur_input)
+            label_batch.append(cur_label)
+
         return input_batch, label_batch
 
     def _sample_neg_example(self, size):
-        np.sample(self.ref_dict[size])
-        pass
+        z_track = np.sample(self.ref_dict[size])
+        z_idx = np.random.randint(z_track[0], z_track[1])
+        x_track = np.sample(self.ref_dict[size])
+        while x_track == z_track:
+            x_track = np.sample(self.ref_dict[size])
+        x_idx = np.random.randint(x_track[0], x_track[1])
+        return z_idx, x_idx
 
-    def _get_input_label_pos_example(self, z_idx, x_idx):
+    def _get_input_label_example(self, z_idx, x_idx):
         z_ref = self._original_refs[z_idx]
         z_img = self._get_img(z_ref)
         prev_box = self._clip_bbox_from_ref(z_ref)
@@ -445,86 +470,30 @@ class Track_Siam_Feeder(Track_Feeder):
         x_img = self._get_img(x_ref)
         cur_box = self._clip_bbox_from_ref(x_ref)
 
+        # in pysot: same encoding procedure for z-x
+        # => all use their own box (instead of prev box for cur img in re3)
         search, label = self._encode_bbox(x_img, prev_box, cur_box)
         template, _ = self._encode_bbox(z_img, prev_box, [0, 0, 0, 0])
 
         return (template, search), label
 
-    def _get_input_label_example_mask(self, track_ref):
-        # generate mask based on label box of time t-1
-        org_ref = self._original_refs[track_ref:track_ref + self.num_unrolls]  # get original_ref for a track
-        if np.random.rand() < self.config['use_inference_prob']:
-            return self._get_input_label_from_inference(track_ref)
-
-        input_seq = []
-        label_seq = []
-        prev_box = None
-        for r in org_ref:  # for original_ref in a track
-            cur_img = self._get_img(r)
-            cur_box = self._clip_bbox_from_ref(r, np.array(cur_img.shape))  # xyxy box
-
-            if prev_box is None:
-                prev_box = cur_box
-            cur_input, cur_label = self._encode_bbox(cur_img, prev_box, cur_box)
-            prev_box = cur_box
-            
-            input_seq.append(cur_input)
-            label_seq.append(cur_label)
-        return input_seq, label_seq
-
-    def _get_input_label_from_inference(self, ref):
-        img_seq = []
-        box_seq = []
-        for r in ref:  # for original_ref in constructed track ref
-            cur_img = self._get_img(r)
-            cur_box = self._clip_bbox_from_ref(r, np.array(cur_img.shape))  # xyxy box
-            img_seq.append(cur_img)
-            box_seq.append(cur_box)
-
-        pred_seq = self.config['model'].inference(img_seq, box_seq, self.config['sess'])
-
-        input_seq = []
-        label_seq = []
-        prev_box = None
-        prev_input = None
-        for cnt in range(len(ref)):
-            img = img_seq[cnt]
-            label_box = box_seq[cnt]
-            prev_box = box_seq[0] if cnt == 0 else pred_seq[cnt - 1]
-            cur_input, cur_label = self._encode_bbox(img, prev_box, label_box)
-
-            if self.config['bbox_encoding'] == 'crop' and prev_input is None:
-                cur_input = (cur_input, prev_input)
-            input_seq.append(cur_input)
-            label_seq.append(cur_label)
-
-            if self.config['bbox_encoding'] == 'crop':
-                prev_input = cur_input
-
-        return input_seq, label_seq
-
     def iterate_track(self):
         '''
         iterate over all tracks in dataset as (input_seq, label_seq)
-        Warning: should not be used if feeder is currently wrapped by parallel feeder (as feeder states modified)
         '''
-        _use_inference_prob = self.config['use_inference_prob']
-        _num_unrolls = self.num_unrolls
-
-        self.config['use_inference_prob'] = -1
-        idx = 0
-        track_input, track_label = [], []
-        while idx < len(self._original_refs):
-            # collect cur track
-            start_idx = idx
-            vid = list(self._original_refs[idx][[0, 1, 3]])
-            while idx < len(self._original_refs) and vid == list(self._original_refs[idx][[0, 1, 3]]):
-                idx += 1
-            self.num_unrolls = idx - start_idx
-            yield self._get_input_label_example(start_idx)
-
-        self.config['use_inference_prob'] = _use_inference_prob
-        self.num_unrolls = _num_unrolls
+        for ref_list in self.ref_dict.values():
+            track_input, track_label = [], []
+            for start_idx, end_idx in ref_list:
+                prev_box = self._clip_bbox_from_ref(self._original_refs[start_idx])
+                for ref in self._original_refs[start_idx:end_idx]
+                    img = self._get_img(ref)
+                    cur_box = self._clip_bbox_from_ref(ref)
+                    track_input = self._encode_bbox(img, prev_box, cur_box)                    
+                    
+                    track_input.append(track_input)
+                    track_label.append(cur_box)
+                    prev_box = cur_box
+            yield track_input, track_label
 
     def _get_crop_region(self, box):
         x, y, w, h = self._xyxy_to_xywh(box)

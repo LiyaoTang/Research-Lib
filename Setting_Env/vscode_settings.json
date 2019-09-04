@@ -4,6 +4,9 @@
         "**/.ipynb_checkpoints": true,
         "Data": true
     },
+    "files.associations": {
+        ".prototxt": "prototxt"
+    },
 
     "editor.fontSize": 16,
     "editor.formatOnType": true,

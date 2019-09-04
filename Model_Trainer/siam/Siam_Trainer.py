@@ -22,7 +22,7 @@ plt.ion()
 
 import Data_Feeder as feeder
 import Model_Analyzer as analyzer
-import Models as models
+import Models.Torch_Models as models
 
 class SiamRPN_Trainer(object):
     def __init__(self, model_name, root_dir, args):
@@ -55,7 +55,7 @@ class SiamRPN_Trainer(object):
             'base_path': '../../Data'
         }
         train_ref = os.path.join('../../Data/ILSVRC2015/train_label.npy')
-        train_feeder = feeder.Track_Re3_Feeder(train_ref, num_unrolls=num_unrolls, batch_size=batch_size, config=feeder_cfg)
+        train_feeder = feeder.Track_Siam_Feeder(train_ref, num_unrolls=num_unrolls, batch_size=batch_size, config=feeder_cfg)
         self.train_feeder = train_feeder
         print('total data num = ', len(train_feeder.data_ref))
 
