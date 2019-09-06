@@ -28,6 +28,11 @@ void Tracker::track_init(cv::Mat img, cv::Rect box, int track_id) {
     std::vector<torch::IValue> model_input{input_tensor.to(torch::kFloat)};  // convert to accepted input
     torch::Tensor model_out = _model.forward(model_input).toTensor();
 
+    /**
+     * torch::IValue input = 
+     * _model.run_method("init", )
+     * **/
+
     _track_pool[track_id].first  = std::make_shared<torch::Tensor>(model_out);
     _track_pool[track_id].second = box;
 }
