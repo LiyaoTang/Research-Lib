@@ -62,8 +62,8 @@ def calc_IoU(box1, box2):
     
     area1 = (box1[2] - box1[0]) * (box1[3] - box1[1])
     area2 = (box2[2] - box2[0]) * (box2[3] - box2[1])
-    union = area1 * area2 - intersection
-    return union / intersection
+    union = area1 + area2 - intersection
+    return intersection / union
 
 class Bounding_Box(object):
     '''

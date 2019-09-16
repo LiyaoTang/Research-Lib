@@ -11,23 +11,6 @@ import torch.nn.functional as F
 ''' cross-correlation '''
 
 
-def xcorr_slow(x, kernel):
-    '''
-    for loop to calculate cross correlation, slow version
-    '''
-    batch = x.size()[0]
-    out = []
-    for i in range(batch):
-        px = x[i]
-        pk = kernel[i]
-        px = px.view(1, px.size()[0], px.size()[1], px.size()[2])
-        pk = pk.view(-1, px.size()[1], pk.size()[1], pk.size()[2])
-        po = F.conv2d(px, pk)
-        out.append(po)
-    out = torch.cat(out, 0)
-    return out
-
-
 def xcorr_fast(x, kernel):
     '''
     group conv2d to calculate cross correlation, fast version
@@ -67,7 +50,7 @@ def cls_loss(pred, label, select):
 def select_cross_entropy_loss(pred, label):
     pred = pred.view(-1, 2)
     label = label.view(-1)
-    pos = label.data.eq(1).nonzero().squeeze().cuda()
+    pos = label.data.eq(1).nonzero().squeeze().cuda()  # use only 0-1 label
     neg = label.data.eq(0).nonzero().squeeze().cuda()
     loss_pos = cls_loss(pred, label, pos)
     loss_neg = cls_loss(pred, label, neg)

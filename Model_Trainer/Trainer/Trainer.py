@@ -7,7 +7,6 @@ module: utils to config / construct a training pipeline
 import os
 import numpy as np
 from argparse import ArgumentParser
-from optparse import OptionParser
 
 class Default_Argumentparser(ArgumentParser):
     def __init__(self, model_group_name, dataset_name, root_dir='../../', class_num=-1, class_name='', cv_fold=0):
@@ -144,6 +143,9 @@ def set_rand_seed(seed, platform):
 
 class Base_Trainer(object):
     def __init__(self):
+        raise NotImplementedError
+
+    def load_config(self):
         raise NotImplementedError
 
     def construct_feeder(self):
