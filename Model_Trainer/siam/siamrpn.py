@@ -12,10 +12,9 @@ import os
 import time
 import random
 import psutil
-import argparse
+import Utilities as utils
 
-import Re3_Trainer as trainer
-
+parser = utils.config.load_yaml_into_argparser('./config.yaml')
 DEBUG = True
 
 ''' parsing args '''
@@ -32,16 +31,17 @@ def str2bool(v):
 parser = argparse.ArgumentParser(description='training re3')
 
 parser.add_argument('--attention', type=str, dest='attention')
+parser.add_argument('--fuse_type', default='spp', type=str, dest='fuse_type')
+parser.add_argument('--bbox_encoding', default='mask', type=str, dest='bbox_encoding')
+
 parser.add_argument('--num_unrolls', default=2, type=int, dest='num_unrolls')
 parser.add_argument('--lstm_size', default=512, type=int, dest='lstm_size')
 parser.add_argument('--lrn_rate', default=None, type=float, dest='lrn_rate')
 parser.add_argument('--weight_prefix', default='', type=str, dest='weight_prefix')
 
-parser.add_argument('--fuse_type', default='spp', type=str, dest='fuse_type')
 parser.add_argument('--label_type', default='center', type=str, dest='label_type')
 parser.add_argument('--label_norm', default='dynamic', type=str, dest='label_norm')
 parser.add_argument('--unroll_type', default='dynamic', type=str, dest='unroll_type')
-parser.add_argument('--bbox_encoding', default='mask', type=str, dest='bbox_encoding')
 parser.add_argument('--use_inference_prob', default=-1, type=float, dest='use_inference_prob')
 
 parser.add_argument('--max_step', default=1e6, type=float, dest='max_step')

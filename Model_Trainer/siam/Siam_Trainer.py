@@ -20,11 +20,12 @@ import matplotlib as mlt
 import matplotlib.pyplot as plt
 plt.ion()
 
+import Trainer as trainer
 import Data_Feeder as feeder
 import Model_Analyzer as analyzer
 import Models.Torch_Models as models
 
-class SiamRPN_Trainer(object):
+class SiamRPN_Trainer(trainer.Base_Trainer):
     def __init__(self, model_name, root_dir, args):
         super(SiamRPN_Trainer, self).__init__()
         self.args = args

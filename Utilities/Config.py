@@ -7,6 +7,13 @@ module: utilities for managing (dcit-based) configration, including:
     merge multiple config (with override)
     specify argparser by yaml file
 '''
+__all__ = ('load_config_into_argparser',
+           'load_yaml_into_argparser',
+           'merge_config',
+           'merge_yaml_into_cfg',
+           'merge_args_into_cfg')
+
+import argparse
 
 def str2bool(v):
     if isinstance(v, bool):
@@ -18,20 +25,25 @@ def str2bool(v):
     else:
         raise argparse.ArgumentTypeError('boolean value expected, given ', type(v))
 
-def load_yaml_into_argparser(path):
-    import yaml
-    with open(path, 'r') as f:
-        cfg = yaml.load(f)
-    
-    parser = ArgumentParser()
+def load_config_into_argparser(cfg, parser=None):
+    if parser is None:
+        parser = argparse.ArgumentParser()
     for k, v in cfg.items():
         if type(v) is bool:
             parser.add_argument('--' + k, dest=k, type=str2bool, default=v)
+        elif type(v) is dict:
+            load_config_into_argparser(cfg[k], parser)
         else:
             parser.add_argument('--' + k, dest=k, type=type(v), default=v)
     return parser
 
-def merge_config(ext, cfg):
+def load_yaml_into_argparser(path):
+    import yaml
+    with open(path, 'r') as f:
+        cfg = yaml.load(f)
+    return load_config_into_argparser(cfg)
+
+def merge_config(cfg, ext):
     for k in ext:
         if k in cfg and type(ext[k]) == type(cfg[k]):
             if type(ext[k]) is dict:
@@ -44,7 +56,7 @@ def merge_config(ext, cfg):
             cfg[k] = ext[k]
     return cfg
 
-def merge_yaml_into_cfg(path, cfg):
+def merge_yaml_into_cfg(cfg, path):
     import yaml
     with open(path, 'r') as f:
         ext = yaml.load(f)

@@ -1,0 +1,10 @@
+feeder_cfg:
+    bbox_encoding: crop # mask mesh
+
+net_cfg:
+    attention: hard # soft soft_fuse
+
+log_cfg:
+    log_dir: 
+    model_dir: 
+    restore_dir: 

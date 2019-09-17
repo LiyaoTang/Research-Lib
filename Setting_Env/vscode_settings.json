@@ -12,6 +12,10 @@
     "editor.formatOnType": true,
     "editor.largeFileOptimizations": true,
     "editor.defaultFormatter": "himanoa.Python-autopep8",
+    "explorer.confirmDragAndDrop": false,
+    "terminal.integrated.shell.linux": "/bin/bash",
+    "window.zoomLevel": 0,
+    "workbench.editor.revealIfOpen": true,
 
     "[cpp]": {
         "editor.defaultFormatter": "xaver.clang-format",
@@ -34,13 +38,8 @@
     "python.terminal.activateEnvironment": false,
     "python.dataScience.sendSelectionToInteractiveWindow": false,
 
-    "terminal.integrated.shell.linux": "/bin/bash",
-    "window.zoomLevel": 0,
-    "workbench.editor.revealIfOpen": true,
-
     "[latex]": {
         "editor.wordWrap": "on"
     },
     "latex-workshop.view.pdf.viewer": "tab",
-    "explorer.confirmDragAndDrop": false,
 }
