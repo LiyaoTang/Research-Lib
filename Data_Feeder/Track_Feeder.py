@@ -5,8 +5,19 @@ module: data pipeline for tracking
 '''
 
 import os
+import sys
+sys.path.append('../../')
+
 import numpy as np
+import Utilities as utils
+
 from .base import Feeder
+
+__all__ = (
+    'Track_Re3_Feeder',
+    'Track_Siam_Feeder'
+)
+
 
 class Track_Feeder(Feeder):
     '''
@@ -61,9 +72,6 @@ class Track_Feeder(Feeder):
             self.decode_bbox = self._decode_bbox_mask
             self._get_frame_size_from_ref = lambda ref: tuple(ref[[4, 5]].astype(int))
 
-        self.data_dir = '/'.join(self.data_ref_path.strip('/').split('/')[:-1]) \
-                        if 'data_dir' not in config else config['data_dir']  # keys default to be directly under data dir
-
     def _load_original_refs(self):
         # load the prepared original refs
         if self._original_refs is None:
@@ -117,7 +125,7 @@ class Track_Feeder(Feeder):
         xyxy_in_crop = actual_region - desired_region[[0, 1, 0, 1]]
 
         # crop on original img
-        [xmin, ,ymin xmax, ymax] = actual_region
+        [xmin, ymin, xmax, ymax] = actual_region
         cropped_img[xyxy_in_crop[1]:xyxy_in_crop[3], xyxy_in_crop[0]:xyxy_in_crop[2]] = img[ymin:ymax, xmin:xmax]
 
         # convert cur_box (current label) to the crop coord
@@ -360,7 +368,7 @@ class Track_Siam_Feeder(Track_Feeder):
 
     def __init__(self, data_ref_path, frame_range=None, pos_num=0.8, batch_size=None, img_lib='cv2', config={}):
         config['img_lib'] = img_lib
-        config['img_style'] = 'RBG'
+        config['img_order'] = 'RBG'
         super(Track_Siam_Feeder, self).__init__(data_ref_path, config)
         self._original_refs = None
         self.ref_dict = None
@@ -485,7 +493,7 @@ class Track_Siam_Feeder(Track_Feeder):
             track_input, track_label = [], []
             for start_idx, end_idx in ref_list:
                 prev_box = self._clip_bbox_from_ref(self._original_refs[start_idx])
-                for ref in self._original_refs[start_idx:end_idx]
+                for ref in self._original_refs[start_idx:end_idx]:
                     img = self._get_img(ref)
                     cur_box = self._clip_bbox_from_ref(ref)
                     track_input = self._encode_bbox(img, prev_box, cur_box)                    

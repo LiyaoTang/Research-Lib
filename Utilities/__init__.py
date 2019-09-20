@@ -6,4 +6,4 @@ import control for folder Utilities
 
 from .Bounding_Box import *
 from .Anchor_Box import *
-from .Config import Config
+from .Config import *

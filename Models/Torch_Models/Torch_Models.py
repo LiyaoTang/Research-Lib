@@ -33,7 +33,6 @@ class Siam_RPN(nn.Module):
                     'model': torch_modules.MultiRPN,
                     'kwargs': {'in_channels': [256, 256, 256], 'anchor_num': 5, 'weighted': False},
                 },
-                'loss': {'cls_weight': 1, 'loc_weight': 1.2}
             }
 
         # construct backbone

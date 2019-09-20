@@ -10,6 +10,7 @@ sys.path.append(root_dir)
 
 import os
 import time
+import torch
 import random
 import psutil
 import Utilities as utils
@@ -17,54 +18,74 @@ import Utilities as utils
 
 ''' parsing args '''
 
-config = utils.Config()
-config.merge_yaml('./config.yaml')
+cfg = utils.Config()
+cfg.merge_yaml('./config.yaml')
 parser = config.construct_argparser()
 args = parser.parse_args()
-config.merge_args(args)
+cfg.merge_args(args)
+cfg['DEBUG'] = True
+cfg = cfg.freeze()
 
-config['DEBUG'] = True
-print(config.config)
+path_cfg = cfg['path']
+train_cfg = cfg['train']
+model_cfg = cfg['model']
+feeder_cfg = cfg['feeder']
 
-exit()
+def seed(seed=0):
+    random.seed(seed)
+    os.environ['PYTHONHASHSEED'] = str(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    # disable online tunning for specific input size (gpu mem related, e.g. layout)
+    # => useful when input size fixed 
+    # (otherwise may benchmark different algorithms multiple times and hence worsen performance)
+    torch.backends.cudnn.benchmark = False
+    # only allow cudnn to choose (believed to be) determinstic algorithm
+    # for reproducibility: turn off benchmark (as may use different algorithms depending on host)
+    torch.backends.cudnn.deterministic = True
 
-if args.rand_seed is not None:
-    np.random.seed(args.rand_seed)
-    tf.random.set_random_seed(args.rand_seed)
+if train_cfg['rand_seed'] is not None:
+    seed(train_cfg['rand_seed'])
 
 # model name
-if not args.model_name:
+if not model_cfg['name']:
     tt = time.localtime()
     time_str = ('_%04d_%02d_%02d_%02d_%02d_%02d' % (tt.tm_year, tt.tm_mon, tt.tm_mday, tt.tm_hour, tt.tm_min, tt.tm_sec))
-    args.model_name = 're3-%s_lstm%d_%s_%s_%s_%s' % (args.bbox_encoding, args.lstm_size, args.attention, \
-                                                     args.label_type, args.label_norm, args.fuse_type)
-    args.model_name += '' if args.rand_seed is None else '_r%d' % args.rand_seed
-    args.model_name += time_str
+    model_name = 'siam-%s%s_%s%s_%s' % (
+        feeder_cfg['bbox_encoding'],
+        '_' + feeder_cfg['attention'] if feeder_cfg['bbox_encoding'] != 'crop' else '',
+        model_cfg['backbone']['model'],
+        '_neck' if model_cfg['neck'] else '',
+        model_cfg['rpn']['model'],
+    )
+
+    model_name += '_r%d' % train_cfg['rand_seed'] if train_cfg['rand_seed'] else ''
+    model_name += time_str
+else:
+    model_name = model_cfg['name']
 
 # config dir path
-if not args.restore_dir:
-    args.restore_dir = os.path.join(args.model_dir, 're3')
-args.max_step = int(args.max_step)
-args.model_dir = os.path.join(args.model_dir, args.model_name)
-
-# make dirs
-os.makedirs(args.model_dir, exist_ok=True)
-os.makedirs(args.summary_dir, exist_ok=True)
+assert path_cfg['restore_dir']
+os.makedirs(os.path.join(path_cfg['model_dir'], model_name), exist_ok=True)
+os.makedirs(path_cfg['summary_dir'], exist_ok=True)
 
 # change std out if log dir originally given
-if args.log_dir:
-    os.makedirs(args.log_dir, exist_ok=True)
-    log_file_path = os.path.join(args.log_dir, args.model_name)
+if path_cfg['log_dir']:
+    os.makedirs(path_cfg['log_dir'], exist_ok=True)
+    log_file_path = os.path.join(path_cfg['log_dir'], model_name)
     log_file = open(log_file_path, 'w')
     sys.stdout = log_file
     sys.stderr = log_file  # redirect runtime warining/error as well
-    print(args.model_name)
+    print(model_name)
 else:
     log_file = ''
 
+# import training after env prepared
+import Siam_Trainer as trainer
 try:
-    re3_trainer = trainer.Re3_Trainer(args.model_name, args.root_dir, args)
-    re3_trainer.train()
+    siam_trainer = trainer.SiamRPN_Trainer(model_name, cfg)
+    siam_trainer.train()
 except:
     log_file.close()
     raise

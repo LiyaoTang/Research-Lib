@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 '''
-module: pipeline to solve data-related problem for neural net (e.g. feeding, recording, etc.)
+module: data pipeline for radar processing
 '''
 
 import os
@@ -11,91 +11,15 @@ import time
 import warnings
 import numpy as np
 import pandas as pd
-import tensorflow as tf
 
-root_dir = '../'
-sys.path.append(root_dir)
-import Utilities as utils
-
-from .base import TFRecord_Feeder, TF_CSV_Feeder, TF_TXT_Feeder, Gen_Feeder, Feeder
+from .base import Gen_Feeder
 from collections import defaultdict
 
-class Img_from_Record_Feeder(TFRecord_Feeder):
-    '''
-    construct pipeline (tf.data) to feed image from tfrecord, constructed by txtData_Constructor or similar
-    '''
-    def __init__(self, data_path, img_shape_3D=(1024, 448, 8), label_shape_3D=(1024, 448, 4),
-                 meta_data_file=None, norm_type='', use_sparse=False,
-                 features_dict={'image_raw': tf.io.FixedLenFeature([], tf.string),
-                                'label_raw': tf.io.FixedLenFeature([], tf.string)}):
-
-        super(Img_from_Record_Feeder, self).__init__(data_path, features_dict)
-        self.img_shape_3D = tuple(img_shape_3D)
-        self.label_shape_3D = tuple(label_shape_3D)
-        assert len(self.img_shape_3D) == 3 and len(self.label_shape_3D) == 3
-        
-        self.use_sparse = use_sparse
-
-        if meta_data_file is not None:
-            self._read_meta_data(meta_data_file)
-        else:
-            assert norm_type == ''
-        self._construct_norm_method(norm_type)
-
-    def _construct_norm_method(self, norm_type):
-        assert norm_type in ('', 'mean', 'std')
-        if not norm_type:
-            try:
-                if norm_type == 'mean':
-                    self.norm_func = lambda x: x - self.mean
-                elif norm_type == 'std':
-                    self.norm_func = lambda x: (x - self.mean) / self.std
-            except:
-                print('possibly meta data not read yet')
-        else:
-            self.norm_func = lambda x: x
-
-    def _read_meta_data(self, meta_data_file):
-        h5f = h5py.File(meta_data_file, 'r')
-        self.mean = np.array(h5f['mean'])
-        self.std = np.array(h5f['std'])
-        self.class_ratio = np.array(h5f['class_ratio'])
-        h5f.close()
-    
-    def _decode_to_tensor(self, serialized_example):
-        example = tf.parse_single_example(serialized_example, features=self.features_dict)
-        
-        img = tf.decode_raw(example['image_raw'], tf.float64) # python float <=> tf.float64
-        # img = tf.Print(img, [tf.shape(img), img[0]], message='before reshape img')
-        img = tf.reshape(img, self.img_shape_3D)
-        img = self.norm_func(img)
-
-        label = tf.decode_raw(example['label_raw'], tf.int64) # python int <=> tf.int64
-        # label = tf.Print(label, [tf.shape(label), tf.shape(img), label[0]], message='before reshape label')
-        label = tf.reshape(label, self.label_shape_3D)
-
-        return [img, label]
-
-
-class Sparse_Img_from_txt_Feeder(TF_TXT_Feeder):
-    def __init__(self, data_path, recursive=True, re_expr='dw_((?!_label).)*\.txt',
-                 img_shape_3D=(1024, 448, 8), label_shape_3D=(1024, 448, 4)):
-        super(Sparse_Img_from_txt_Feeder, self).__init__(data_path, recursive, re_expr, granularity='file')
-        self.img_shape_3D = img_shape_3D
-        self.label_shape_3D = label_shape_3D
-
-    def _parse_file(self, filename):
-        point_string = tf.read_file(filename).strip().split('\n')
-        indice_arr, value_arr = tf.map_fn(lambda line: [line[0:2], line[2:]], point_string, dtype=[tf.int32, tf.float32])
-        input_img = tf.SparseTensor(indice_arr, value_arr, self.img_shape_3D)
-
-        label_name = tf.strings.regex_replace(filename, '\.txt', '_label.txt')
-        label_string = tf.read_file(label_name).strip().split('\n')
-        # plus one => to distinguish unknown from background 0
-        label_idx_arr, label_arr = tf.map_fn(lambda line: [line[0:2], line[2:] + 1], label_string, dtype=[tf.int32, tf.int32])
-        label_msk = tf.SparseTensor(label_idx_arr, label_arr, self.label_shape_3D)
-
-        return [input_img, label_msk]
+__all__ = (
+    'Corner_Radar_Points_Gen_Feeder',
+    'Corner_Radar_Boxcenter_Gen_Feeder',
+    'Back_Radar_Bbox_Gen_Feeder'
+)
 
 
 class Corner_Radar_Points_Gen_Feeder(Gen_Feeder):

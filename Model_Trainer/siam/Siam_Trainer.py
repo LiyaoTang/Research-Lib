@@ -26,12 +26,11 @@ import Model_Analyzer as analyzer
 import Models.Torch_Models as models
 
 class SiamRPN_Trainer(trainer.Base_Trainer):
-    def __init__(self, model_name, root_dir, args):
+    def __init__(self, model_name, cfg):
         super(SiamRPN_Trainer, self).__init__()
-        self.args = args
-        self.root_dir = root_dir
+        self.cfg = cfg
         self.model_name = model_name
-        self.ckpt_path = os.path.join(self.args.model_dir, self.args.model_name)
+        self.ckpt_path = os.path.join(self.cfg['model_dir'], self.args.model_name)
         self.is_training = False
 
         ''' feeder '''
@@ -44,19 +43,11 @@ class SiamRPN_Trainer(trainer.Base_Trainer):
         self.train_recorder = analyzer.Tracking_SOT_Record()
         self.val_recorder = analyzer.Tracking_SOT_Record()
 
-        self.train = self.train_tfdataset if self.args.use_tfdataset else self.train_feeddict
-        self.display_img_pred_label = self.display_img_pred_label_single if args.bbox_encoding != 'crop' else self.display_img_pred_label_double
-
     def construct_feeder(self, num_unrolls, batch_size):
-        args = self.args
-        feeder_cfg = {
-            'label_type': args.label_type,
-            'bbox_encoding': args.bbox_encoding,
-            'use_inference_prob': args.use_inference_prob,
-            'base_path': '../../Data'
-        }
+        feeder_cfg = self.cfg['feeder']
+        data_ref_path, frame_range=None, pos_num=0.8, batch_size=None, img_lib='cv2', config={}):
         train_ref = os.path.join('../../Data/ILSVRC2015/train_label.npy')
-        train_feeder = feeder.Track_Siam_Feeder(train_ref, num_unrolls=num_unrolls, batch_size=batch_size, config=feeder_cfg)
+        train_feeder = feeder.Track_Siam_Feeder(feeder_cfg['ref_path'], config=feeder_cfg)
         self.train_feeder = train_feeder
         print('total data num = ', len(train_feeder.data_ref))
 
@@ -298,100 +289,5 @@ class SiamRPN_Trainer(trainer.Base_Trainer):
             if self.args.run_val:
                 self.val_model.record_val(self.ckpt_path)
 
-    def train_feeddict(self):
-        # start training
-        args = self.args
-        start_time = time.time()
-        try:
-            # training strategy: initial unrolls=2, batch=64; then, unrolls*=2, batch/=2, till unroll=32 (batch=4)
-            # stablize first few convs, then jointly train
-            num_unrolls = 2
-            batch_size = 2
-            epoch = 1
-            # allow only specified vars to train: to stablize (no re-config)
-            self.prepare_train(num_unrolls, batch_size, dummy_summary=True)
-            self.train_step = self.tracker.train_step
-            print('training prepared')
-            for ep_cnt in range(epoch):
-                print('starting epoch', ep_cnt)
-                for input_batch, label_batch in self.data_feeder.iterate_data():
-                    feed_dict = {
-                        self.tracker.tf_input: input_batch,
-                        self.tracker.tf_label: label_batch,
-                        # self.tracker.prev_state: self.tf_init_state(batch_size),
-                    }
-                    self.run_train_step(feed_dict, self.global_step)
-                    self.global_step += 1
-
-            # num_unrolls = 2
-            # batch_size = 64
-            # while num_unrolls <= 32:
-            #     self.prepare_train(num_unrolls, batch_size)
-            #     for input_batch, label_batch in self.data_feeder.iterate_data():
-            #         run_train_step(input_batch, label_batch, self.global_step)
-            #         self.global_step += 1
-            #     num_unrolls *= 2
-            #     batch_size /= 2
-
-            # save the lastest model
-            self.saver.save(self.sess, self.ckpt_path, global_step=self.global_step)
-            self.summary_writer.flush()
-            sys.stdout.flush()
-
-        except:  # save on unexpected termination
-            if self.paral_feeder is not None:
-                self.paral_feeder.shutdown()
-            if not args.debug:
-                print('saving...')
-                checkpoint_file = os.path.join(args.log_dir, 'checkpoints', 'model.ckpt')
-                self.saver.save(self.sess, checkpoint_file, global_step=self.global_step)
-            raise
-
-    def train_tfdataset(self):
-        # start training
-        args = self.args
-        start_time = time.time()
-        try:
-            # training strategy: initial unrolls=2, batch=64; then, unrolls*=2, batch/=2, till unroll=32 (batch=4)
-            # stablize first few convs, then jointly train
-            num_unrolls = 2
-            batch_size = 2
-            epoch = 1
-            # allow only specified vars to train: to stablize (no re-config)
-            self.prepare_train(num_unrolls, batch_size, dummy_summary=True)
-            self.train_step = self.tracker.train_step
-            feed_dict = {}
-            print('training prepared')
-            for ep_cnt in range(epoch):
-                self.sess.run(self.tf_dataset_iter.initializer)
-                print('starting epoch', ep_cnt)
-                while True:
-                    try:
-                        self.run_train_step(feed_dict, self.global_step)
-                        self.global_step += 1
-                    except tf.errors.OutOfRangeError:
-                        break
-                
-            # num_unrolls = 2
-            # batch_size = 64
-            # while num_unrolls <= 32:
-            #     self.prepare_train(num_unrolls, batch_size)
-            #     for input_batch, label_batch in self.data_feeder.iterate_data():
-            #         run_train_step(input_batch, label_batch, self.global_step)
-            #         self.global_step += 1
-            #     num_unrolls *= 2
-            #     batch_size /= 2
-
-            # save the lastest model
-            self.saver.save(self.sess, self.ckpt_path, global_step=self.global_step)
-            self.summary_writer.flush()
-            print('training done')
-            sys.stdout.flush()
-
-        except:  # save on unexpected termination
-            if self.paral_feeder is not None:
-                self.paral_feeder.shutdown()
-            if not args.debug:
-                print('saving on unexpected termination...')
-                self.saver.save(self.sess, self.ckpt_path, global_step=self.global_step)
-            raise
+    def train(self):
+        pass

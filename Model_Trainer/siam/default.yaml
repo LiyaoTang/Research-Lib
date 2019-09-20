@@ -1,0 +1,53 @@
+path:
+    log_dir: ./Log
+    model_dir: ./Model
+    summary_dir: ./Summary
+    restore_dir:
+
+model:
+    name: ''
+    attention: hard # hard soft soft_fuse (meaningful only if bbox_encoding != crop)
+    backbone:
+        model:
+        kwargs:
+
+    neck:
+        in_channels: [44, 134, 448]
+        out_channels: [256, 256, 256]
+
+    rpn:
+        model:
+        kwargs:
+
+train:
+    epoch: 20
+    rand_seed: 0
+
+    lrn_rate: 1e-5
+    loss:
+        cls_weight:
+        loc_weight:
+
+feeder:
+    base_path: ../../Data
+    ref_path: ../../Data/ILSVRC2015/train_label.npy
+
+    bbox_encoding: crop # crop mask mesh
+
+    batch_size: 64
+    pos_num: 0.8 # positive example ratio in a batch
+
+    thr_pos: 0.6
+    thr_neg: 0.3
+    anchor_num: 64
+    anchor_pos: 16
+    anchor_neg: 16
+    frame_range: 100
+
+    img_lib: cv2
+    img_order: RGB
+    label_type: center # center corner
+
+    worker_num: 2
+    buffer_size: 3
+    use_parallel: False

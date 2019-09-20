@@ -12,10 +12,33 @@ module: utilities for managing (dcit-based) configration, including:
 #            'merge_config',
 #            'merge_yaml_into_cfg',
 #            'merge_args_into_cfg')
-__all__ = ('Config')
+__all__ = ('Frozen_Config', 'Config')
 
 import yaml
 import argparse
+
+class Frozen_Config(object):
+    def __init__(self, config):
+        super(Frozen_Config, self).__init__()
+        self.__config = config.copy()
+        assert type(self.__config) is dict, 'not able to freeze from ' + repr(config)
+
+    def __getitem__(self, k):
+        if type(self.__config[k]) is dict:
+            return Frozen_Config(self.__config[k])
+        return self.__config[k]
+    def __iter__(self):
+        return iter(self.__config.copy())
+    def __repr__(self):
+        return repr(self.__config)
+    def keys(self):
+        return self.__config.keys()
+    def items(self):
+        return self.__config.copy().items()
+    def values(self):
+        return self.__config.copy().values()
+    def copy(self):
+        return Frozen_Config(self.__config.copy())
 
 class Config(object):
     def __init__(self, config=None):
@@ -42,13 +65,27 @@ class Config(object):
         self.config = merge_args_into_cfg(self.config, args, self.arg_cfg_map)
 
     def __getitem__(self, k):
+        # if type(self.config[k]) is dict:
+        #     return Config(self.config[k])
         return self.config[k]
     def __setitem__(self, k, v):
         self.config[k] = v
     def __delitem__(self, k):
         del self.config[k]
-    def __iter__(self):
+    def __iter__(self):  # used by dict(c:'Config')
         return iter(self.config)
+    def __repr__(self):
+        return repr(self.config)
+    def keys(self):
+        return self.config.keys()
+    def items(self):
+        return self.config.items()
+    def values(self):
+        return self.config.values()
+    def copy(self):
+        return Config(self.config.copy())
+    def freeze(self):
+        return Frozen_Config(self.config)
 
 def str2bool(v):
     if isinstance(v, bool):
