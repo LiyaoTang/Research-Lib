@@ -1,10 +1,13 @@
-feeder_cfg:
+feeder:
     bbox_encoding: crop # mask mesh
 
-net_cfg:
+model:
+    name:
     attention: hard # soft soft_fuse
 
+train: {}
+
 log_cfg:
-    log_dir: 
-    model_dir: 
-    restore_dir: 
+    log_dir: ./Log
+    model_dir: ./Model
+    summary_dir: ./Summary

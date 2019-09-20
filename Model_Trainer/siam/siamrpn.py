@@ -14,58 +14,19 @@ import random
 import psutil
 import Utilities as utils
 
-parser = utils.config.load_yaml_into_argparser('./config.yaml')
-DEBUG = True
 
 ''' parsing args '''
 
-def str2bool(v):
-    if isinstance(v, bool):
-       return v
-    if v.lower() in ('yes', 'true', 't', 'y', '1'):
-        return True
-    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
-        return False
-    else:
-        raise argparse.ArgumentTypeError('boolean value expected, given ', type(v))
-parser = argparse.ArgumentParser(description='training re3')
-
-parser.add_argument('--attention', type=str, dest='attention')
-parser.add_argument('--fuse_type', default='spp', type=str, dest='fuse_type')
-parser.add_argument('--bbox_encoding', default='mask', type=str, dest='bbox_encoding')
-
-parser.add_argument('--num_unrolls', default=2, type=int, dest='num_unrolls')
-parser.add_argument('--lstm_size', default=512, type=int, dest='lstm_size')
-parser.add_argument('--lrn_rate', default=None, type=float, dest='lrn_rate')
-parser.add_argument('--weight_prefix', default='', type=str, dest='weight_prefix')
-
-parser.add_argument('--label_type', default='center', type=str, dest='label_type')
-parser.add_argument('--label_norm', default='dynamic', type=str, dest='label_norm')
-parser.add_argument('--unroll_type', default='dynamic', type=str, dest='unroll_type')
-parser.add_argument('--use_inference_prob', default=-1, type=float, dest='use_inference_prob')
-
-parser.add_argument('--max_step', default=1e6, type=float, dest='max_step')
-parser.add_argument('--rand_seed', default=None, type=int, dest='rand_seed')
-
-parser.add_argument('--batch_size', default=64, type=int, dest='batch_size')
-parser.add_argument('--run_val', default=True, type=str2bool, dest='run_val')
-parser.add_argument('--worker_num', default=1, type=int, dest='worker_num')
-parser.add_argument('--buffer_size', default=5, type=int, dest='buffer_size')
-parser.add_argument('--use_parallel', default=True, type=str2bool, dest='use_parallel')
-parser.add_argument('--use_tfdataset', default=False, type=str2bool, dest='use_tfdataset')
-
-parser.add_argument('--model_name', type=str, dest='model_name')
-parser.add_argument('--root_dir', default='../../', type=str, dest='root_dir')
-parser.add_argument('--log_dir', default='./Log', type=str, dest='log_dir')
-parser.add_argument('--model_dir', default='./Model', type=str, dest='model_dir')
-parser.add_argument('--summary_dir', default='./Summary', type=str, dest='summary_dir')
-parser.add_argument('--restore', default=True, type=str2bool, dest='restore')
-parser.add_argument('--restore_dir', default=None, type=str, dest='restore_dir')
-
-parser.add_argument('--debug', default=True, type=str2bool, dest='debug')
-parser.add_argument('--display', default=False, type=str2bool, dest='display')
-
+config = utils.Config()
+config.merge_yaml('./config.yaml')
+parser = config.construct_argparser()
 args = parser.parse_args()
+config.merge_args(args)
+
+config['DEBUG'] = True
+print(config.config)
+
+exit()
 
 if args.rand_seed is not None:
     np.random.seed(args.rand_seed)

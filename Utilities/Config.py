@@ -24,9 +24,11 @@ class Config(object):
             self.config = config
         elif type(config) is str and config.endswith('yaml'):
             with open(config, 'r') as f:
-            self.config = yaml.load(f)
-        elif config is not None:
-            raise TypeError('not supported to have', config, 'as config')
+                self.config = yaml.safe_load(f)
+        elif not config:
+            self.config = {}
+        else:
+            raise TypeError('not supported to have', repr(obj), 'as config')
         self.arg_cfg_map = {}  # args parser attr -> key in self.config
 
     def construct_argparser(self):
@@ -37,14 +39,20 @@ class Config(object):
         self.config = merge_yaml_into_cfg(self.config, path)
 
     def merge_args(self, args):
-        self.config = merge_args_into_cfg(self.cfg, args, self.arg_cfg_map)
+        self.config = merge_args_into_cfg(self.config, args, self.arg_cfg_map)
 
     def __getitem__(self, k):
         return self.config[k]
+    def __setitem__(self, k, v):
+        self.config[k] = v
+    def __delitem__(self, k):
+        del self.config[k]
+    def __iter__(self):
+        return iter(self.config)
 
 def str2bool(v):
     if isinstance(v, bool):
-    return v
+        return v
     if v.lower() in ('yes', 'true', 't', 'y', '1'):
         return True
     elif v.lower() in ('no', 'false', 'f', 'n', '0'):
@@ -53,10 +61,10 @@ def str2bool(v):
         raise argparse.ArgumentTypeError('boolean value expected, given ', type(v))
 
 def load_config_into_argparser(cfg):
-    def _add_cfg(parser, cfg_keys, arg_cfg_map):
+    def _add_cfg(cfg, parser, cfg_keys, arg_cfg_map):
         for k, v in cfg.items():
             if type(v) is dict:
-                _add_cfg(cfg[k], parser, cfg_keys=cfg_keys.copy() + [k], arg_cfg_map)
+                _add_cfg(cfg[k], parser, cfg_keys.copy() + [k], arg_cfg_map)
             else:
                 if type(v) is bool:
                     parser.add_argument('--' + k, dest=k, type=str2bool, default=v)
@@ -66,12 +74,11 @@ def load_config_into_argparser(cfg):
         return parser, arg_cfg_map
 
     parser = argparse.ArgumentParser()
-    return _add_cfg(parser, [], {})
+    return _add_cfg(cfg, parser, [], {})
 
 def load_yaml_into_argparser(path):
-    import yaml
     with open(path, 'r') as f:
-        cfg = yaml.load(f)
+        cfg = yaml.safe_load(f)
     return load_config_into_argparser(cfg)
 
 def merge_config(cfg, ext):
@@ -88,9 +95,9 @@ def merge_config(cfg, ext):
     return cfg
 
 def merge_args_into_cfg(cfg, args, arg_cfg_map={}):
-    attr_list = [attr for attr in dir(args) if '_' not in attr]
+    attr_list = [attr for attr in dir(args) if not attr.startswith('_')]
     args_dict = {attr: getattr(args, attr) for attr in attr_list}
-    
+
     if not arg_cfg_map:
         return merge_config(cfg, args_dict)
 
@@ -106,7 +113,6 @@ def merge_args_into_cfg(cfg, args, arg_cfg_map={}):
     return cfg
 
 def merge_yaml_into_cfg(cfg, path):
-    import yaml
     with open(path, 'r') as f:
-        ext = yaml.load(f)
+        ext = yaml.safe_load(f)
     return merge_config(cfg, ext)
