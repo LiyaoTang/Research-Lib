@@ -28,7 +28,7 @@ class Track_Feeder(Feeder):
     implemented useful functions:
         read img (RGB, BGR)
         convert label type (xyxy, xywh)
-        encoding bbox onto img (crop, mask, mesh)
+        encoding bbox onto single img (crop, mask, mesh)
     note: xy-min/max are in window coord => x indexing col & y indexing row
     '''
 
@@ -40,7 +40,7 @@ class Track_Feeder(Feeder):
         self._get_global_trackid_from_ref = lambda ref: tuple(ref[[0, 2]])
         self.base_path = config['base_path']
 
-        assert config['img_lib'] in ['cv2', 'skimage']
+        assert config['img_lib'] in ['cv2']
         assert config['img_order'] in ['RGB', 'BGR']
         self.img_lib = __import__(config['img_lib'], fromlist=[''])
         if (config['img_lib'] == 'cv2' and config['img_order'] == 'BGR') or \
@@ -59,18 +59,15 @@ class Track_Feeder(Feeder):
 
         assert config['bbox_encoding'] in ['crop', 'mask', 'mesh']
         if config['bbox_encoding'] == 'crop':
-            self.crop_size = None  # output size of crop (model input size)
             self._encode_bbox = self._encode_bbox_crop  # encode bbox to both input img & label
             self.decode_bbox = self._decode_bbox_crop  # decode pred to bbox on full image
-            self._get_frame_size_from_ref = lambda ref: tuple(self.crop_size, self.crop_size)
         elif config['bbox_encoding'] == 'mask':
             self._encode_bbox = self._encode_bbox_mask
             self.decode_bbox = self._decode_bbox_mask
-            self._get_frame_size_from_ref = lambda ref: tuple(ref[[4, 5]].astype(int))
         else:  # mesh encodeing
             self._encode_bbox = self._encode_bbox_mesh_mask
             self.decode_bbox = self._decode_bbox_mask
-            self._get_frame_size_from_ref = lambda ref: tuple(ref[[4, 5]].astype(int))
+        self._get_frame_size_from_ref = lambda ref: tuple(ref[[4, 5]].astype(int))
 
     def _load_original_refs(self):
         # load the prepared original refs
@@ -111,28 +108,36 @@ class Track_Feeder(Feeder):
         img = np.concatenate([img, mask, Y[..., np.newaxis], X[..., np.newaxis]], axis=-1)
         return img, cur_box
 
-    def _encode_bbox_crop(self, img, crop_region, cur_box, pad_val=0):
-        # crop_region: xywh
+    def _encode_bbox_crop(self, img, crop_region, cur_box, patch_size, pad_val=0):
+        # patch: final output (model input)
+        # crop_region: xywh, the desired content on original img (may exceed the edge)
         img_shape = np.array(img.shape)
-        crop_shape = (crop_region[2], crop_region[3], img_shape[-1])
-        cropped_img = np.zeros(shape=crop_shape) + pad_val
+        crop_shape = (crop_region[3], crop_region[2], img_shape[-1]) # row-h, col-w, channel
+        img_patch = np.zeros(shape=crop_shape) + pad_val
 
         # desired & actual crop region (xyxy)
         desired_region = self._xywh_to_xyxy(crop_region)
         actual_region = np.clip(desired_region, 0, img_shape[[1, 0, 1, 0]]).astype(int)
 
-        # convert coord for actual crop region: from img coord to cropped_img (desired region) coord
+        # convert coord for actual crop region: from img coord to img crop
         xyxy_in_crop = actual_region - desired_region[[0, 1, 0, 1]]
 
-        # crop on original img
+        # crop on original img & resize
         [xmin, ymin, xmax, ymax] = actual_region
-        cropped_img[xyxy_in_crop[1]:xyxy_in_crop[3], xyxy_in_crop[0]:xyxy_in_crop[2]] = img[ymin:ymax, xmin:xmax]
+        img_patch[xyxy_in_crop[1]:xyxy_in_crop[3], xyxy_in_crop[0]:xyxy_in_crop[2]] = img[ymin:ymax, xmin:xmax]
+        img_patch = self.img_lib.resize(img_patch, (patch_size, patch_size))
+
+        # # resize as crop => faster
+        # xyxy_in_patch = (xyxy_in_crop / crop_shape[[2, 3, 2, 3]] * patch_size).astype(int)
+        # wh_in_patch = [xyxy_in_patch[2] - xyxy_in_patch[0], xyxy_in_patch[3] - xyxy_in_patch[1]]
+        # img_patch[xyxy_in_patch[1]:xyxy_in_patch[3], xyxy_in_patch[0]:xyxy_in_patch[2]] = \
+        #     self.img_lib.resize(img[ymin:ymax, xmin:xmax], wh_in_patch)
 
         # convert cur_box (current label) to the crop coord
         label_box = cur_box - desired_region[[0, 1, 0, 1]]  # originated as [x,y,x,y] - [xmin,ymin,xmin,ymin]
-        label_box[[0, 2]] = label_box[[0, 2]] / crop_shape[1] * self.crop_size  # normalized as x / w ratio, then rescale
-        label_box[[1, 3]] = label_box[[1, 3]] / crop_shape[0] * self.crop_size  # normalized as y / h ratio, then rescale
-        return self.img_lib.resize(cropped_img, (self.crop_size, self,crop_size)), label_box
+        label_box[[0, 2]] = label_box[[0, 2]] / crop_shape[1] * patch_size  # normalized as x / w ratio, then rescale
+        label_box[[1, 3]] = label_box[[1, 3]] / crop_shape[0] * patch_size  # normalized as y / h ratio, then rescale
+        return img_patch, label_box
 
     def _decode_bbox_crop(self, crop_region, cur_box):
         # crop_region: xywh
@@ -185,6 +190,7 @@ class Track_Re3_Feeder(Track_Feeder):
 
         assert config['bbox_encoding'] in ['crop', 'mask', 'mesh']
         if config['bbox_encoding'] == 'crop':
+            self.patch_size = 277
             self._get_input_label_example = self._get_input_label_example_crop # feed pair of crop
         elif config['bbox_encoding'] == 'mask':
             self._get_input_label_example = self._get_input_label_example_mask # feed full img with mask
@@ -247,7 +253,7 @@ class Track_Re3_Feeder(Track_Feeder):
 
     def _encode_bbox_crop(self, img, prev_box, cur_box):
         crop_region = self._get_crop_region(prev_box)  # prev_box from pred/label in xyxy
-        return super(self, Track_Re3_Feeder)._encode_bbox_crop(img, crop_region, cur_box, pad_val=0)
+        return super(self, Track_Re3_Feeder)._encode_bbox_crop(img, crop_region, cur_box, self.patch_size, pad_val=0)
 
     def _decode_bbox_crop(self, img, prev_box, cur_box):
         crop_region = self._get_crop_region(prev_box)  # prev_box from pred/label in xyxy
@@ -366,8 +372,8 @@ class Track_Siam_Feeder(Track_Feeder):
     pos_num: the least num/ratio of positive z-x pair inside a batch
     '''
 
-    def __init__(self, data_ref_path, frame_range=None, pos_num=0.8, batch_size=None, img_lib='cv2', config={}):
-        config['img_lib'] = img_lib
+    def __init__(self, data_ref_path, frame_range=None, pos_num=0.8, batch_size=None, config={}):
+        config['img_lib'] = 'cv2'
         config['img_order'] = 'RBG'
         super(Track_Siam_Feeder, self).__init__(data_ref_path, config)
         self._original_refs = None
@@ -376,12 +382,16 @@ class Track_Siam_Feeder(Track_Feeder):
 
         assert config['bbox_encoding'] in ['crop', 'mask', 'mesh']
         if config['bbox_encoding'] == 'crop':
-            self.decode_bbox = self._decode_bbox_crop  # decode pred to bbox on full image
-            self._get_input_label_example = self._get_input_label_example_crop # feed pair of cropped img
+            self.template_size = config['template']['size']
+            self.search_size = config['search']['size']
+            self._prepare_template = self._prepare_mask  # feed pair of cropped img
+            self._prepare_search = self._prepare_mask
         elif config['bbox_encoding'] == 'mask':
-            self._get_input_label_example = self._get_input_label_example_mask # feed pair of full img with mask
+            self._prepare_template = self._prepare_mask  # feed pair of full img with mask
+            self._prepare_search = self._prepare_mask
         else:  # mesh encodeing
-            self._get_input_label_example = self._get_input_label_example_mask
+            self._prepare_template = self._prepare_mask
+            self._prepare_search = self._prepare_mask
 
         # construct self.data_refs & record frame_range-batch_size-pos_num, if provided
         if frame_range and pos_num and batch_size:
@@ -421,10 +431,10 @@ class Track_Siam_Feeder(Track_Feeder):
                 ref_dict[size].append((start_idx, idx))
             self.ref_dict = ref_dict  # needed for neg example retrieval
         
-        # construct [batch, ...], batch = [z-x-id, ...], z-x are original refs for positive pairs only, id the idx in ref_dict
+        # construct [batch, ...], batch = [z-x, ..., id], z-x are original refs for positive pairs only, id the idx in ref_dict
         data_ref = []
         for cur_size, ref_list in ref_dict.items():
-            example_list = [] # sample examples
+            example_list = [] # sample examples (z-x pair)
             for start_idx, end_idx in ref_list:
                 for z_idx in range(start_idx, end_idx):  # use each img as template for at least once
                     x_idx_min = max(z_idx - self.frame_range, start_idx)
@@ -472,36 +482,58 @@ class Track_Siam_Feeder(Track_Feeder):
     def _get_input_label_example(self, z_idx, x_idx):
         z_ref = self._original_refs[z_idx]
         z_img = self._get_img(z_ref)
-        prev_box = self._clip_bbox_from_ref(z_ref)
+        z_box = self._clip_bbox_from_ref(z_ref)
 
         x_ref = self._original_refs[x_idx]
         x_img = self._get_img(x_ref)
-        cur_box = self._clip_bbox_from_ref(x_ref)
+        x_box = self._clip_bbox_from_ref(x_ref)
 
-        # in pysot: same encoding procedure for z-x
-        # => all use their own box (instead of prev box for cur img in re3)
-        search, label = self._encode_bbox(x_img, prev_box, cur_box)
-        template, _ = self._encode_bbox(z_img, prev_box, [0, 0, 0, 0])
+        template, _  = self._prepare_template(z_img, z_box)
+        search, label = self._prepare_search(x_img, x_box)
 
         return (template, search), label
 
+    def _prepare_template_crop(self, img, box):
+        # all use their own box (instead of prev box for cur img in re3)
+        # => in case prev box (template) do not contain target in search img (due to large frame range)
+        crop_region = self._get_crop_region(box)
+        template, _ = super(self, Track_Siam_Feeder)._encode_bbox_crop(img, crop_region, [0, 0, 0, 0],
+                                                                       self.template_size,
+                                                                       pad_val=np.mean(img, axis=(0, 1)))
+        return template, None
+
+    def _prepare_search_crop(self, img, box):
+        crop_region = self._get_crop_region(box)
+        search, label = super(self, Track_Siam_Feeder)._encode_bbox_crop(img, crop_region, box,
+                                                                       self.search_size,
+                                                                       pad_val=np.mean(img, axis=(0, 1)))
+        return search, label
+
+    def _prepare_mask(self, img, box):
+        patch, _ = self._encode_bbox(img, box, None)
+        return patch, box
+
     def iterate_track(self):
         '''
-        iterate over all tracks in dataset as (input_seq, label_seq)
+        iterate over all tracks in dataset as (template, search imgs, labels)
         '''
         for ref_list in self.ref_dict.values():
             track_input, track_label = [], []
-            for start_idx, end_idx in ref_list:
-                prev_box = self._clip_bbox_from_ref(self._original_refs[start_idx])
-                for ref in self._original_refs[start_idx:end_idx]:
+            for start_idx, end_idx in ref_list:  # a track
+                z_ref = self._original_refs[start_idx]
+                z_img = self._get_img(z_ref)
+                z_box = self._clip_bbox_from_ref(z_ref)
+                template, _ = self._prepare_template(z_img, z_box)
+
+                search_list = []
+                label_list = []
+                for ref in self._original_refs[start_idx + 1:end_idx]:
                     img = self._get_img(ref)
-                    cur_box = self._clip_bbox_from_ref(ref)
-                    track_input = self._encode_bbox(img, prev_box, cur_box)                    
-                    
-                    track_input.append(track_input)
-                    track_label.append(cur_box)
-                    prev_box = cur_box
-            yield track_input, track_label
+                    box = self._clip_bbox_from_ref(ref)
+                    search, label = self._prepare_search(img, box)
+                    search_list.append(search)
+                    label_list.append(label)
+            yield template, search_list, label_list
 
     def _get_crop_region(self, box):
         x, y, w, h = self._xyxy_to_xywh(box)
@@ -510,11 +542,3 @@ class Track_Siam_Feeder(Track_Feeder):
         h += context_amount
         norm_sz = np.sqrt(w * h)  # convert box into square region (after extended with some context space)
         return [x, y, norm_sz, norm_sz]
-
-    def _encode_bbox_crop(self, img, prev_box, cur_box):
-        crop_region = self._get_crop_region(prev_box)  # prev_box from pred/label in xyxy
-        return super(self, Track_Siam_Feeder)._encode_bbox_crop(img, crop_region, cur_box, pad_val=np.mean(img, axis=(0, 1)))
-
-    def _decode_bbox_crop(self, img, prev_box, cur_box):
-        crop_region = self._get_crop_region(prev_box)  # prev_box from pred/label in xyxy
-        return super(self, Track_Siam_Feeder)._decode_bbox_crop(img, crop_region, cur_box)

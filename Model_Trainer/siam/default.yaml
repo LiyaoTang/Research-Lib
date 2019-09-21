@@ -36,13 +36,13 @@ feeder:
 
     batch_size: 64
     pos_num: 0.8 # positive example ratio in a batch
+    frame_range: 100
 
     thr_pos: 0.6
     thr_neg: 0.3
     anchor_num: 64
     anchor_pos: 16
     anchor_neg: 16
-    frame_range: 100
 
     img_lib: cv2
     img_order: RGB
@@ -51,3 +51,8 @@ feeder:
     worker_num: 2
     buffer_size: 3
     use_parallel: False
+
+    template:
+        size: 127
+    search:
+        size: 255
