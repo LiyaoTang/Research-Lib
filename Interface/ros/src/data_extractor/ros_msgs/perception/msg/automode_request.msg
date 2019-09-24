@@ -1,3 +1,0 @@
-Header header
-bool automode_request
-bool front_light_on_request

@@ -105,7 +105,7 @@ def restore(model, save_file, optimizer=None, device='cpu'):
         print('retry after adding prefix \'features.\'')  # retry
         state_dict = {'features.' + k: v for k, v in state_dict}
         if not check_keys(model, state_dict):
-            raise AttributeError, 'nothing loaded from save_file=', save_file
+            raise AttributeError('nothing loaded from save_file= ' + save_file)
     model.load_state_dict(state_dict, strict=False)
 
     # load optimizer

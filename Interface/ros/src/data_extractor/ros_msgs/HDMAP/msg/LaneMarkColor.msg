@@ -1,7 +1,0 @@
-Header header
-
-int32 COLOR_NONE = 0
-int32 COLOR_YELLOW = 1
-int32 COLOR_WHITE = 2
-int32 COLOR_BLUE = 10
-int32 COLOR_ORANGE = 11

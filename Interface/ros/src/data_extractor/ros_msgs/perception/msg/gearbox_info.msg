@@ -1,2 +1,0 @@
-Header header
-int32 gearbox_position_display

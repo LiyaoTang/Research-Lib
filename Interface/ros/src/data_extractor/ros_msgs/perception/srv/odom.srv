@@ -1,7 +1,0 @@
-int64 mode
-uint64 time_ms
-uint64 time_us
-uint64 time_ns
----
-int64 sum
-perception_msgs/fused_odom odom

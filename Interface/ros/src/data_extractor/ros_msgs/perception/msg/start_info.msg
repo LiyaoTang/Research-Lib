@@ -1,1 +1,0 @@
-int64 det_time_us         # det_time_us = 读取gps文件中第一条记录时的当前系统时间 - gps文件中第一条记录的时间 + 1秒(为了等待其他node都准备好）

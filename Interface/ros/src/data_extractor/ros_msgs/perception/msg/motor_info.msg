@@ -1,4 +1,0 @@
-Header header
-float64 controller_torque
-float64 motor_speed
-float64 gas_pedal_position

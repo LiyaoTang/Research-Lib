@@ -1,4 +1,0 @@
-Header header
-objects k_objects
-road_info k_road_info
-vehicle_info k_vehicle_info
