@@ -27,18 +27,18 @@ def fcn_pipe(input, conv_struct, use_batchnorm=False, is_training=None, scope='p
                     # kernel/bias initializer: default to xavier/zeros
                     if len(layer_cfg) > 1:
                         net = tf.concat([tfops.conv_layer(net, out_channels=cfg[1], filter_size=cfg[0], padding='SAME',
-                                         scope='conv%d-%d' % (cfg[0], cfg[1]))
+                                                          activation=None, scope='conv%d-%d' % (cfg[0], cfg[1]))
                                          for cfg in layer_cfg], axis=-1)
                     else:
                         cfg = layer_cfg[0]
                         net = tfops.conv_layer(net, out_channels=cfg[1], filter_size=cfg[0], padding='SAME',
-                                               scope='conv%d-%d' % (cfg[0], cfg[1]))
-
-                    # it seems BN after ReLU does generally better than BN before ReLU
+                                               activation=None, scope='conv%d-%d' % (cfg[0], cfg[1]))
+                    # it seems bn before activation is generally better
                     if use_batchnorm:
                         bn_layer = tf.keras.layers.BatchNormalization(name='bn')
                         assert is_training is not None
                         net = bn_layer(net, training=is_training)
+                    net = tf.nn.relu(net)
     return net
 
 def alexnet_conv_layers(input, auxilary_input=None, prelu_initializer=tf.constant_initializer(0.25), fuse_type='flat'):

@@ -25,7 +25,7 @@ def xcorr_fast(x, kernel):
 
 def xcorr_depthwise(x, kernel):
     '''
-    depthwise cross correlation
+    depthwise (channel-wise) cross correlation
     '''
     batch = kernel.size(0)
     channel = kernel.size(1)
@@ -93,7 +93,7 @@ def restore(model, save_file, optimizer=None, device='cpu'):
         ckpt_dict = torch.load(save_file, map_location=lambda storage, loc: storage.cpu())
     else:  # load into gpu
         device = torch.cuda.current_device()
-        ckpt_dict = torch.load(pretrained_path, map_location=lambda storage, loc: storage.cuda(device))
+        ckpt_dict = torch.load(save_file, map_location=lambda storage, loc: storage.cuda(device))
 
     # load model
     state_dict = ckpt_dict['state_dict'] if "state_dict" in state_dict.keys() else ckpt_dict

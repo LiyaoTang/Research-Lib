@@ -169,6 +169,20 @@ def spatial_pyramid_pooling(input, bin_dimensions, pooling_mode='max', scope='sp
 ''' operation '''
 
 
+def calc_pad(input_shape, kernel_shape, stride, dilation, mode='SAME'):
+    '''
+    TODO: calc padding offset at each side for SAME padding
+    '''
+    raise NotImplementedError
+    assert mode in ['SAME']
+    assert dilation == 0, 'dialation not implemented yet'
+    x_w, x_h = input_shape[1], input_shape[2]
+    k_w, k_h = kernel_shape[0], kernel_shape[1]
+    s_w, s_h = stride
+    pad = [k_h - stride]
+    return pad
+
+
 def conv(input, kernel, biases, stride_w, stride_h, padding, num_groups=1):
     '''
     Creates convolutional layers supporting the "group" parameter
@@ -240,7 +254,12 @@ def conv_layer(input, out_channels, filter_size, stride=1, num_groups=1, padding
     with var_scope(scope):
         W_conv = tf.get_variable('W_conv', kernel_shape, dtype=tf.float32, initializer=weights_initializer)
         b_conv = tf.get_variable('b_conv', [out_channels], dtype=tf.float32, initializer=bias_initializer)
-        conv_out = conv(input, W_conv, b_conv, stride_width, stride_height, padding, num_groups)
+        if padding.upper() == 'AVG':
+            pad_size = calc_pad(input.shape, kernel_shape, (stride_width, stride_height))
+            input = tf.pad(input, pad_size, 'CONSTANT', constant_values=input.mean(axis=(1, 2)))
+            conv_out = conv(input, W_conv, b_conv, stride_width, stride_height, 'VALID', num_groups)
+        else:
+            conv_out = conv(input, W_conv, b_conv, stride_width, stride_height, padding, num_groups)
         if activation is not None:
             conv_out = activation(conv_out)
 
