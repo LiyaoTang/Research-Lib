@@ -6,7 +6,7 @@ module: some self-constructed torch layers as classes
 
 import torch.nn as nn
 import torch.nn.functional as F
-from . import Torch_Ops as torch_ops
+import Torch_Ops as torch_ops
 from torch.nn.modules.utils import _pair
 
 class Conv2d(nn.modules.conv._ConvNd):
