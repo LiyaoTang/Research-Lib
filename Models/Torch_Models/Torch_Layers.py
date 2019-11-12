@@ -35,7 +35,7 @@ class Conv2d(nn.modules.conv._ConvNd):
                             weight, self.bias, self.stride,
                             _pair(0), self.dilation, self.groups)
         elif self.padding_mode == 'avg':
-            return F.conv2d(F.pad(input, self.padding, mode='constant', value=input.mean(dims=(-1,-2))),
+            return F.conv2d(torch_ops.average_padding(input, self.padding),
                             weight, self.bias, self.stride,
                             _pair(0), self.dilation, self.groups)
         return F.conv2d(input, weight, self.bias, self.stride,

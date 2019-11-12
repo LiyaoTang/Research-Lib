@@ -8,6 +8,26 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
+''' padding '''
+
+def average_padding(input, padding):
+    '''
+    only tested for 2D padding
+    Args:
+        inputs: Assumed in NCHW format
+        padding: A tuple-like value to specify padding at one side
+    '''
+    pad_val = input.mean(dim = (-1, -2))
+    out_dims = input.size()
+    out_dims = out_dims[:-2] + (out_dims[-2] + padding[-2] * 2, out_dims[-1] + padding[-1] * 2)  # expand HW only
+    out_tensor = pad_val.unsqueeze(-1).unsqueeze(-1).repeat(1, 1, *out_dims[-2:])  # filled with desired value
+    # copy original val
+    out_tensor[...,
+               padding[0]: out_dims[-2] - padding[0],
+               padding[1]: out_dims[-1] - padding[1]] = input
+    return out_tensor
+
+
 ''' cross-correlation '''
 
 
