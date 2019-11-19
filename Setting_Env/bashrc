@@ -7,6 +7,9 @@ export PATH=$PATH:/usr/local/cuda/NsightCompute-2019.3
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/cuda/lib64/
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/cuda/extras/CUPTI/lib64
 
+# tensorRT (easier to use tar installation)
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/home/tangliyao/TensorRT-5.1.5.0.lib
+
 # libtorch
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/include/libtorch # absolute path to folder libtroch
 
