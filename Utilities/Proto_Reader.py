@@ -19,7 +19,7 @@ class Node():
     
     def add(self, k, v=None):
         if v is None:
-            v = Node(k, self) # sub-node initially named after its key
+            v = Node(k, self)  # sub-node initially named after its key
         if k in self.key:
             idx = self.key.index(k)
             if type(self.val[idx]) != list:
@@ -52,14 +52,24 @@ class Node():
         return self.val[self.key.index(i)]
     
     def __setitem__(self, k, v):  # enable assignment by index
-        assert k in self.key
-        self.val[self.key.index(k)] = v
+        if k in self.key:
+            self.val[self.key.index(k)] = v
+        else:
+            self.key.append(k)
+            self.val.append(v)
     
     def __repr__(self):
         return str(dict(zip(self.key, self.val)))
     
     def __str__(self):
         return self.to_file()
+    
+    def copy(self):
+        cpy = Node(name=self.name, parent=self.parent, comment=self.comment)
+        cpy.key = [k for k in self.key]
+        cpy.val = [v.copy() if type(v) == Node else v for v in self.val]
+        cpy.format = self.format
+        return cpy
     
     def to_file(self, path=None):
         '''
@@ -95,7 +105,7 @@ class Node():
                         lines.append(prefix + h.format % (k, n))
             else:
                 lines.append(prefix + h.format % (k, v))
- 
+
         _add_node(self, prefix)
         stream = '\n'.join(lines)
 
@@ -103,7 +113,7 @@ class Node():
             with open(path, 'w') as f:
                 f.write(stream)
         return stream
-        
+
     def read_file(self, path, comment='#'):
         '''
         read protobuf, any line containing "#" (default choice) would be treated as comment
