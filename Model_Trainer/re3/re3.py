@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 # coding: utf-8
-'''
+"""
 script: train re3 tracker
-'''
+"""
 
 import sys
 root_dir = '../../'
@@ -14,7 +14,7 @@ import random
 import psutil
 import argparse
 
-''' parsing args '''
+""" parsing args """
 
 def str2bool(v):
     if isinstance(v, bool):

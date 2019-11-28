@@ -33,13 +33,13 @@ class SiamRPN_Trainer(trainer.Base_Trainer):
         self.ckpt_path = os.path.join(self.cfg['model_dir'], self.args.model_name)
         self.is_training = False
 
-        ''' feeder '''
+        """ feeder """
         self.train_feeder = None
         self.paral_feeder = None
         self.val_feeder = None
         self.data_feeder = None
 
-        ''' metric recoder '''
+        """ metric recoder """
         self.train_recorder = analyzer.Tracking_SOT_Record()
         self.val_recorder = analyzer.Tracking_SOT_Record()
 

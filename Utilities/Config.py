@@ -1,12 +1,12 @@
 #!/usr/bin/env python
 # coding: utf-8
-'''
+"""
 module: utilities for managing (dcit-based) configration, including:
     convert argparse into config dict
     convert yaml into config dict
     merge multiple config (with override)
     specify argparser by yaml file
-'''
+"""
 # __all__ = ('load_config_into_argparser',
 #            'load_yaml_into_argparser',
 #            'merge_config',

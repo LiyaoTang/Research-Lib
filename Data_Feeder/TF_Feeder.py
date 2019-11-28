@@ -1,16 +1,16 @@
 #!/usr/bin/env python
 # coding: utf-8
-'''
+"""
 module: base class for using tf dataset
-'''
+"""
 
 import tensorflow as tf
 from .base import File_Traverser
 
 class TF_Feeder(object):
-    '''
+    """
     base class to build a tf.data pipeline
-    '''
+    """
     def __init__(self, data_path):
         self.data_path = data_path
     
@@ -18,9 +18,9 @@ class TF_Feeder(object):
         raise NotImplementedError
 
     def config_dataset(self, epoch=1, batch=1, shuffle=True, shuffle_buf=100):
-        '''
+        """
         get a configured dataset
-        '''
+        """
         dataset = self._get_dataset()
         dataset = dataset.repeat(epoch)
         dataset = dataset.batch(batch)
@@ -29,17 +29,17 @@ class TF_Feeder(object):
         return dataset
 
     def get_general_iterator(self, epoch=1, batch=1, shuffle=True, shuffle_buf=100):
-        '''
+        """
         get general iterator => enable to switch dataset 
-        '''
+        """
         dataset = self.config_dataset(epoch=epoch, batch=batch, shuffle=shuffle, shuffle_buf=shuffle_buf)
         return tf.data.Iterator.from_structure(dataset.output_types, dataset.output_shapes)
     
     def get_dataset_iterator(self, epoch=1, batch=1, shuffle=True, shuffle_buf=100, one_shot=False):
-        '''
+        """
         construct tf.train.Dataset iterators to feed batches
         to use, see https://www.tensorflow.org/guide/datasets
-        '''
+        """
         dataset = self.config_dataset(epoch=epoch, batch=batch, shuffle=shuffle, shuffle_buf=shuffle_buf)
 
         if one_shot:
@@ -51,9 +51,9 @@ class TF_Feeder(object):
 
 
 class TFRecord_Feeder(TF_Feeder):
-    '''
+    """
     base class to build a tf.data pipeline from a .tfrecord
-    '''
+    """
     def __init__(self, data_path, features_dict):
         super(TFRecord_Feeder, self).__init__(data_path)
         self.features_dict = features_dict
@@ -63,9 +63,9 @@ class TFRecord_Feeder(TF_Feeder):
         raise NotImplementedError
 
     def feed(self):
-        '''
+        """
         to get next example from the tfrecord
-        '''
+        """
         self.record_iterator = tf.python_io.tf_record_iterator(path=self.data_path)
         for raw_example in self.record_iterator:
             example = tf.train.Example()
@@ -78,12 +78,12 @@ class TFRecord_Feeder(TF_Feeder):
         raise NotImplementedError
 
     def construct_batch_feeder(self, batch_size, shuffle=True, capacity=None, min_after_dequeue=None, num_threads=1):
-        '''
+        """
         Deprecate! - replaced by tf.train.Dataset
         construct tensor(s) to feed batches, to start a feeder: 
             coord = tf.train.Coordinator()
             threads = tf.train.start_queue_runners(coord=coord)
-        '''
+        """
         if not capacity:
             capacity = 10 * batch_size
         if not min_after_dequeue: # minimal number after dequeue - for the level of mixing
@@ -110,10 +110,10 @@ class TFRecord_Feeder(TF_Feeder):
 
 
 class TF_CSV_Feeder(TF_Feeder):
-    '''
+    """
     base class to construct tf.data pipeline to read, parse & feed CSV data
     TODO: implement deprecate pipeline threading for backward compatibility
-    '''
+    """
     def __init__(self, data_path, record_defaults, select_cols=None, header=True, recursive=True, re_expr='.*'):
         super(TF_CSV_Feeder, self).__init__(data_path)
         self.record_defaults = record_defaults
@@ -139,12 +139,12 @@ class TF_CSV_Feeder(TF_Feeder):
                                           select_cols=self.select_cols)
 
     def construct_batch_feeder(self, batch_size, shuffle=True, capacity=None, min_after_dequeue=None, num_threads=1):
-        '''
+        """
         Deprecate! - replaced by tf.train.Dataset
         construct tensor(s) to feed batches, to start a feeder: 
             coord = tf.train.Coordinator()
             threads = tf.train.start_queue_runners(coord=coord)
-        '''
+        """
         if not capacity:
             capacity = 10 * batch_size
         if not min_after_dequeue: # minimal number after dequeue - for the level of mixing
@@ -168,9 +168,9 @@ class TF_CSV_Feeder(TF_Feeder):
 
 
 class TF_TXT_Feeder(TF_Feeder):
-    '''
+    """
     base class to construct tf.data pipeline to read, parse & feed txt data
-    '''
+    """
     def __init__(self, data_path, recursive=True, file_re='.*', line_re=None, granularity='file'):
         super(TF_TXT_Feeder, self).__init__(data_path)
         self.traverser = File_Traverser(data_path, file_re)  # treat data path as dir
@@ -201,9 +201,9 @@ class TF_TXT_Feeder(TF_Feeder):
 
 
 class Img_from_Record_Feeder(TFRecord_Feeder):
-    '''
+    """
     construct pipeline (tf.data) to feed image from tfrecord, constructed by txtData_Constructor or similar
-    '''
+    """
     def __init__(self, data_path, img_shape_3D=(1024, 448, 8), label_shape_3D=(1024, 448, 4),
                  meta_data_file=None, norm_type='', use_sparse=False,
                  features_dict={'image_raw': tf.io.FixedLenFeature([], tf.string),

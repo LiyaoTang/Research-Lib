@@ -1,17 +1,17 @@
 #!/usr/bin/env python
 # coding: utf-8
-'''
+"""
 module: some self-constructed tf layers as classes, consistent with TF 2.0
-'''
+"""
 
 import numpy as np
 import tensorflow as tf
 from . import TF_Ops as tfops
 
 class Conv_Layer(object):
-    '''
+    """
     callable layer, with options stored as attributes
-    '''
+    """
     def __init__(self, out_channels, kernel_size, stride=1, num_groups=1, padding='VALID', scope=None,
                  activation=tf.nn.relu, weights_initializer=None, bias_initializer=None, return_vars=False,
                  kernel_name='W_conv', bias_name='b_conv'):

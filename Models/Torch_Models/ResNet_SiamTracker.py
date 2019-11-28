@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 # coding: utf-8
-'''
+"""
 module: resnet backbone use in siamRPN++, augmented with self-constructed ops
-'''
+"""
 import math
 import torch
 

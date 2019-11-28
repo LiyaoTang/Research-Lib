@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 # coding: utf-8
-'''
+"""
 module: classic resnet backbone, augmented with self-constructed ops
-'''
+"""
 
 import torch
 import torch.nn as nn
@@ -230,14 +230,14 @@ class ResNet(nn.Module):
         return tuple(out)
 
 class ResNet_SiamTracker(nn.Module):
-    '''
+    """
     modified to incooperate input size = 127 / 255 s.t. 
     1. there is no need to drop border info, due to [size - kernel + 2*padding] // stride != 0
         => remove padding at 7x7 conv (consider also the following max-pool)
         => replace 1x1 conv with 3x3 conv in downsample
     2. make the template image output odd kernel
         => remove padding at stage-2 3x3 stride-2 conv
-    '''
+    """
 
     def __init__(self, block, layers, zero_init_residual=False,
                  groups=1, norm_layer=None,
@@ -357,54 +357,54 @@ def _resnet(type, block, layers, **kwargs):
 
 
 def resnet18(type='original', **kwargs):
-    '''
+    """
 	ResNet-18 model from
     "Deep Residual Learning for Image Recognition" <https://arxiv.org/pdf/1512.03385.pdf>
 
     Args:
         pretrained (bool): If True, returns a model pre-trained on ImageNet
         progress (bool): If True, displays a progress bar of the download to stderr
-    '''
+    """
     return _resnet(type, BasicBlock, [2, 2, 2, 2], **kwargs)
 
 
 def resnet34(type='original', **kwargs):
-    '''
+    """
 	ResNet-34 model from
     "Deep Residual Learning for Image Recognition" <https://arxiv.org/pdf/1512.03385.pdf>
-    '''
+    """
     return _resnet(type, BasicBlock, [3, 4, 6, 3], **kwargs)
 
 
 def resnet50(type='original', **kwargs):
-    '''
+    """
 	ResNet-50 model from
     "Deep Residual Learning for Image Recognition" <https://arxiv.org/pdf/1512.03385.pdf>
-    '''
+    """
     return _resnet(type, Bottleneck, [3, 4, 6, 3], **kwargs)
 
 
 def resnet101(type='original', **kwargs):
-    '''
+    """
     ResNet-101 model from
     "Deep Residual Learning for Image Recognition" <https://arxiv.org/pdf/1512.03385.pdf>
-    '''
+    """
     return _resnet(type, Bottleneck, [3, 4, 23, 3], **kwargs)
 
 
 def resnet152(type='original', **kwargs):
-    '''
+    """
 	ResNet-152 model from
     "Deep Residual Learning for Image Recognition" <https://arxiv.org/pdf/1512.03385.pdf>
-    '''
+    """
     return _resnet(type, Bottleneck, [3, 8, 36, 3], **kwargs)
 
 
 def resnext50_32x4d(type='original', **kwargs):
-    '''
+    """
 	ResNeXt-50 32x4d model from
     "Aggregated Residual Transformation for Deep Neural Networks" <https://arxiv.org/pdf/1611.05431.pdf>
-    '''
+    """
     kwargs['groups'] = 32
     kwargs['width_per_group'] = 4
     return _resnet('resnext50_32x4d', Bottleneck, [3, 4, 6, 3],
@@ -412,10 +412,10 @@ def resnext50_32x4d(type='original', **kwargs):
 
 
 def resnext101_32x8d(type='original', **kwargs):
-    '''
+    """
 	ResNeXt-101 32x8d model from
     "Aggregated Residual Transformation for Deep Neural Networks" <https://arxiv.org/pdf/1611.05431.pdf>
-    '''
+    """
     kwargs['groups'] = 32
     kwargs['width_per_group'] = 8
     return _resnet('resnext101_32x8d', Bottleneck, [3, 4, 23, 3],
@@ -423,7 +423,7 @@ def resnext101_32x8d(type='original', **kwargs):
 
 
 def wide_resnet50_2(type='original', **kwargs):
-    '''
+    """
 	Wide ResNet-50-2 model from
     "Wide Residual Networks" <https://arxiv.org/pdf/1605.07146.pdf>
 
@@ -431,14 +431,14 @@ def wide_resnet50_2(type='original', **kwargs):
     which is twice larger in every block. The number of channels in outer 1x1
     convolutions is the same, e.g. last block in ResNet-50 has 2048-512-2048
     channels, and in Wide ResNet-50-2 has 2048-1024-2048
-    '''
+    """
     kwargs['width_per_group'] = 64 * 2
     return _resnet('wide_resnet50_2', Bottleneck, [3, 4, 6, 3],
                    pretrained, progress, **kwargs)
 
 
 def wide_resnet101_2(type='original', **kwargs):
-    '''
+    """
 	Wide ResNet-101-2 model from
     "Wide Residual Networks" <https://arxiv.org/pdf/1605.07146.pdf>
 
@@ -446,7 +446,7 @@ def wide_resnet101_2(type='original', **kwargs):
     which is twice larger in every block. The number of channels in outer 1x1
     convolutions is the same, e.g. last block in ResNet-50 has 2048-512-2048
     channels, and in Wide ResNet-50-2 has 2048-1024-2048
-    '''
+    """
     kwargs['width_per_group'] = 64 * 2
     return _resnet('wide_resnet101_2', Bottleneck, [3, 4, 23, 3],
                    pretrained, progress, **kwargs)

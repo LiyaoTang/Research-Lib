@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 # coding: utf-8
-'''
+"""
 script: construct model for points cloud input based on sklearn
-'''
+"""
 
 import sys
 root_dir = '../../'
@@ -22,7 +22,7 @@ import Model_Constructer as constructer
 from optparse import OptionParser
 from sklearn.externals import joblib
 
-''' parsing args '''
+""" parsing args """
 
 parser = OptionParser()
 parser.add_option('--name', dest='model_name')
@@ -129,7 +129,7 @@ else:
 if select_cols is not None:
     select_cols = [int(num) for num in select_cols.split('-')] # str to int
 
-''' constructe dataset '''
+""" constructe dataset """
 
 train_set = feeder.Corner_Radar_Points_Gen_Feeder(path_train_set, class_num=class_num, file_re='.*\.csv',
                                                   use_onehot=use_onehot, line_re=line_re, select_cols=select_cols)
@@ -162,7 +162,7 @@ print(train_set.feature_names)
 process = psutil.Process(os.getpid())
 print('mem usage after data loaded:', process.memory_info().rss / 1024 / 1024, 'MB')
 
-''' constructing model '''
+""" constructing model """
 
 rand_forest = sken.RandomForestClassifier(tree_num, random_state=rand_seed)
 
@@ -202,7 +202,7 @@ def evaluate_model(train_input, train_label, val_input, val_label):
     # else:
     #     plt.savefig(os.path.join(analysis_dir, 'feature_importances/', model_name + '.png'))
 
-''' training & monitoring '''
+""" training & monitoring """
 
 if cv_fold > 0:
     # train with cross validation

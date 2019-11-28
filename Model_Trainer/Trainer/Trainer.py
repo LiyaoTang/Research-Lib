@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 # coding: utf-8
-'''
+"""
 module: utils to config / construct a training pipeline
-'''
+"""
 
 import os
 import numpy as np
@@ -45,9 +45,9 @@ class Default_Argumentparser(ArgumentParser):
         self.add_argument('-b', '--batch',    dest='batch', default=1,  type='int')
     
     def parse_args(self):
-        '''
+        """
         wrapper function for early assertion & parsing logic - for all model, feeder & dataset
-        '''
+        """
         args = super(Default_Argumentparser, self).parse_args()
 
         # legal value chk
@@ -78,10 +78,10 @@ class Default_Argumentparser(ArgumentParser):
 
 
 class Cross_Val_Trainer(object):
-    '''
+    """
     base class to train & evaluate model with cross validation
     assume model can be trained & evaluated with each a single function call
-    '''
+    """
     def __init__(self, fold_num, train_func, evaluate_func):
         self.train_func = train_func
         self.evaluate_func = evaluate_func
@@ -90,9 +90,9 @@ class Cross_Val_Trainer(object):
         assert self.fold_num > 0
     
     def cross_validate(self, all_input, all_label, verbose=False):
-        '''
+        """
         perform k-fold cross validation given all input, label
-        '''
+        """
         fold_size = int((len(all_input) - 1) / self.fold_num) + 1  # round up if not divisible
 
         if verbose: print('using', str(self.fold_num) + '-fold', 'corss validation, with fold size of', str(fold_size))

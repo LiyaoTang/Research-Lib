@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 # coding: utf-8
-'''
+"""
 construct CNN given setting
-'''
+"""
 
 import sys
 root_dir = '../../'
@@ -19,7 +19,7 @@ import Data_Feeder as feeder
 import Model_Analyzer as analyzer
 from optparse import OptionParser
 
-''' parsing args '''
+""" parsing args """
 
 parser = OptionParser()
 parser.add_option('--name', dest='model_name')
@@ -137,7 +137,7 @@ if options.log_dir:
 # reset tf graph environment before everything
 tf.reset_default_graph()
 
-''' constructing dataset '''
+""" constructing dataset """
 
 train_set = feeder.Img_from_Record_Feeder(path_train_set, meta_data_file=path_train_set + meta_postfix,norm_type=norm_type)
 val_set = feeder.Img_from_Record_Feeder(path_val_set, meta_data_file=path_val_set + meta_postfix, norm_type=norm_type)
@@ -150,7 +150,7 @@ train_init_op = general_itr.make_initializer(train_set.config_dataset(epoch=1, b
 val_init_op = general_itr.make_initializer(val_set.config_dataset(shuffle=False))
 test_init_op = general_itr.make_initializer(test_set.config_dataset(shuffle=False))
 
-''' constructing model '''
+""" constructing model """
 
 # general layer configuration
 if regularizer_type == 'L2':
@@ -172,7 +172,7 @@ with tf.variable_scope('input'):
 
 
 
-''' training & monitoring '''
+""" training & monitoring """
 
 # saver to save model
 saver = tf.train.Saver()

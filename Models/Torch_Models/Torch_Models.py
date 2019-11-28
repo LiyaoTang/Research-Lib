@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 # coding: utf-8
-'''
+"""
 module: classes to construct PyTorch models
-'''
+"""
 
 import cv2
 import torch
@@ -12,13 +12,13 @@ import torch.nn.functional as F
 from . import Torch_Modules as torch_modules
 
 
-''' Siamese Trackers '''
+""" Siamese Trackers """
 
 
 class Siam_RPN(nn.Module):
-    '''
+    """
     siam RPN tracker, with different backbone and rpn for choice
-    '''
+    """
 
     def __init__(self, anchor_generator, config=None):
         super(ModelBuilder, self).__init__()
@@ -76,9 +76,9 @@ class Siam_RPN(nn.Module):
     #     anchors = self.anchors + img_center # shift pre-computed anchors on 
 
     def inference_onestep(self, x):
-        '''
+        """
         track by searching template on the given region x
-        '''
+        """
         xf = self.backbone(x)
         if self.neck:
             xf = self.neck_forward(xf)
@@ -89,9 +89,9 @@ class Siam_RPN(nn.Module):
                 'loc': pred_loc,}
 
     # def inference(self, xs, z):
-    #     '''
+    #     """
     #     track over a sequence
-    #     '''
+    #     """
     #     self._template(z)
     #     rst = []
     #     for x in xs:
@@ -106,9 +106,9 @@ class Siam_RPN(nn.Module):
         return pred_cls
 
     def forward(self, data):
-        ''' 
+        """ 
         for training (template branch not pruned)
-        '''
+        """
         template = data['template'].cuda()
         search = data['search'].cuda()
         label_cls = data['label_cls'].cuda()

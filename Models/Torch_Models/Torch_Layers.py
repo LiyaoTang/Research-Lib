@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 # coding: utf-8
-'''
+"""
 module: some self-constructed torch layers as classes
-'''
+"""
 
 import torch.nn as nn
 import torch.nn.functional as F
@@ -10,10 +10,10 @@ import Torch_Ops as torch_ops
 from torch.nn.modules.utils import _pair
 
 class Conv2d(nn.modules.conv._ConvNd):
-    '''
+    """
     enable padding with channel-wise average
     (following pytorch conv2d implementation)
-    '''
+    """
 
     def __init__(self, in_channels, out_channels, kernel_size, stride=1,
                  padding=0, dilation=1, groups=1,

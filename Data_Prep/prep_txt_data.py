@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 # coding: utf-8
-'''
+"""
 construct front-radar txt file into tfrecord
-'''
+"""
 
 from optparse import OptionParser
 from TFRecord_Constructer import *

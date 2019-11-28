@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 # coding: utf-8
-'''
+"""
 module: record model performance and calculate metrics
-'''
+"""
 
 import os
 import gc
@@ -23,34 +23,34 @@ class Metric_Record(object):
         pass
 
     def eval_statistics(self, *args, **kwargs):
-        '''
+        """
         evaluate for the given example (prediction-label pair)
-        '''
+        """
         raise NotImplementedError
 
     def accumulate_rst(self, *args, **kwargs):
-        '''
+        """
         accumulate the result over the whole dataset
-        '''
+        """
         raise NotImplementedError
 
     def evaluate_model(self, *args, **kwargs):
-        '''
+        """
         evaluate the model over the whole dataset
-        '''
+        """
         raise NotImplementedError
 
     def get_result(self, *args, **kwargs):
-        '''
+        """
         calculate and return the result of evaluation
-        '''
+        """
         raise NotImplementedError
     
         
 class Classif_Metric_Record(Metric_Record):
-    '''
+    """
     base class to collect statistics for evaluation of classification model 
-    '''
+    """
 
     def __init__(self, class_num, class_name=None, record_prob=False, title=''):
         super(Classif_Metric_Record, self).__init__()
@@ -80,9 +80,9 @@ class Classif_Metric_Record(Metric_Record):
         return label
 
     def _cal_confusion_matrix(self, pred_flat, label_flat):
-        '''
+        """
         calculate statistical matrix for prediction & prob
-        '''
+        """
         pred_class = np.argmax(pred_flat, axis=-1)
         label_class = np.argmax(label_flat, axis=-1)
 
@@ -97,9 +97,9 @@ class Classif_Metric_Record(Metric_Record):
 
 
     def eval_statistics(self, pred_flat, label_flat):
-        '''
+        """
         evaluate the statistics on the given prediction and label (both assume to be 1d array)
-        '''
+        """
         balanced_acc = dict()
         auc_score = dict()
         average_precision = dict()
@@ -121,10 +121,10 @@ class Classif_Metric_Record(Metric_Record):
                 'overall_balanced_acc': overall_balanced_acc, 'confusion_matrix': confusion_matrix, 'mean_prob_matrix': mean_prob_matrix}
 
     def accumulate_rst(self, prob_pred, label, is_onehot=True, record_prob=False):
-        '''
+        """
         prob_pred and label assumed to be np array with pred/label at last axis
         prob_pred is assumed to be one-hot; label encoding specified by `is_onehot`
-        '''
+        """
         cur_pred_flat = list(prob_pred.reshape(-1, self.class_num))
         if not is_onehot:
             label = self._to_onehot(label)
@@ -158,15 +158,15 @@ class Classif_Metric_Record(Metric_Record):
         self.rst_record['overall_balanced_acc'] = sum(self.rst_record['recall'].values()) / self.class_num
 
     def evaluate_model(self):
-        '''
+        """
         to be implemented for different model
-        '''
+        """
         raise NotImplementedError
 
     def clear_cur_epoch(self):
-        '''
+        """
         clear intermediate result & record overall analysis of current epoch
-        '''
+        """
         self.balanced_acc_curve.append(self.rst_record['overall_balanced_acc'])
         self.rst_record = defaultdict(lambda: 0)
 
@@ -177,9 +177,9 @@ class Classif_Metric_Record(Metric_Record):
         gc.collect()
 
     def plot_evolve_curve(self, show=False, save_path=None, model_name=''):
-        '''
+        """
         plot curve for model evolution, optionally saved into file
-        '''
+        """
         plt.close('all')
         for curve_list, curve_name in zip((self.balanced_acc_curve),
                                           ('balanced_acc_curve')):
@@ -194,9 +194,9 @@ class Classif_Metric_Record(Metric_Record):
             plt.close()
 
     def print_result(self, rst_record=None):
-        '''
+        """
         print cur-epoch statistcs
-        '''
+        """
         if self.title:
             print(self.title)
         if not rst_record:
@@ -222,9 +222,9 @@ class Classif_Metric_Record(Metric_Record):
         sys.stdout.flush()
 
     def plot_cur_epoch_curve(self, show=False, save_path=None, model_name='', use_subdir=True):
-        '''
+        """
         cal & plot curve, optionally saved into file
-        '''
+        """
         def _cal_curve():
             fpr = dict()
             tpr = dict()
@@ -289,10 +289,10 @@ class Classif_Metric_Record(Metric_Record):
 
 
 class TF_Classif_Record(Classif_Metric_Record):
-    '''
+    """
     evaluate model given dataset.iterator & network's pred under TF framework;
     an active session will be created if not given given
-    '''
+    """
 
     def __init__(self, tf_pred, tf_label, tf_itr_init_op, tf_feed_dict, sess, class_num, class_name=None, record_prob=False, title=''):
         super(TF_Classif_Record, self).__init__(class_num, class_name, record_prob, title)
@@ -309,11 +309,11 @@ class TF_Classif_Record(Classif_Metric_Record):
         self.tf_feed_dict = tf_feed_dict # should not contain any variable input in test time! (require input solved by iterator)
 
     def evaluate_model(self):
-        '''
+        """
         evaluate the model on given dataset
         the iterator is assumed to not repeat without exception
         the prediction is assumed to be probablistic prediction for one-hot encoding
-        '''
+        """
         # per epoch statistic
         self.pred_flat = []
         self.label_flat = []
@@ -332,35 +332,35 @@ class TF_Classif_Record(Classif_Metric_Record):
 
 
 class General_Classif_Record(Classif_Metric_Record):
-    '''
+    """
     evaluate model given an arbitrary model
-    '''
+    """
 
     def __init__(self, class_num, class_name=None, record_prob=False, title=''):
         super(General_Classif_Record, self).__init__(class_num, class_name, record_prob, title)
 
     def evaluate_model(self, model_func, input_label_itr, is_onehot=True, print_rst=True):
-        '''
+        """
         request an input_label_itr to fetch (input, label) pair in a for loop;
         a model_func to get probablistic prediction given (input, label) pair
-        '''
+        """
         for batch_input, batch_label in input_label_itr():
             prob_pred = model_func(batch_input, batch_label)
             self.accumulate_rst(prob_pred=prob_pred, label=batch_label, is_onehot=is_onehot, record_prob=self.record_prob)
         self._cal_stat_on_rstrecord(self.record_prob)
 
     def evaluate_model_at_once(self, prob_pred, label, is_onehot=True):
-        '''
+        """
         pass in directly probablistic pred & label
-        '''
+        """
         self.accumulate_rst(prob_pred=prob_pred, label=label, is_onehot=is_onehot, record_prob=True)
         self._cal_stat_on_rstrecord(record_prob=True)
 
 
 class Bbox_Metric_Record(Classif_Metric_Record):
-    '''
+    """
     detection regarded as multiple classification + bbox localization
-    '''
+    """
     def __init__(self, class_num, class_name=None, elem='pixel', match_score='IoU', match_threshold='0.5-0.95/0.05',
                  confidence_type='prob', filter_mode=None, config={}):
         super(Bbox_Metric_Record, self).__init__(class_num, class_name=class_name)
@@ -433,10 +433,10 @@ class Bbox_Metric_Record(Classif_Metric_Record):
         return intersection / union
 
     def _cal_matchscore_matrix(self, pred_bboxlist, label_bboxlist):
-        '''
+        """
         both detect_bbox & label bbox assumed to be a list of Det_Bounding_Box obj
         matrix are constructed as [pred][label]
-        '''
+        """
         matrix = np.zeros(shape=(len(pred_bboxlist), len(label_bboxlist)))
         for i in range(len(pred_bboxlist)):
             for j in range(len(label_bboxlist)):
@@ -488,9 +488,9 @@ class Bbox_Metric_Record(Classif_Metric_Record):
                bbox.valid = False
 
     def _gen_bbox_filter(self):
-        '''
+        """
         generate bbox filter function given specified config
-        '''
+        """
         filter_list = []
         if self.filter_mode is not None:
             if 'focus_size' in self.filter_mode:
@@ -502,9 +502,9 @@ class Bbox_Metric_Record(Classif_Metric_Record):
         self.filter_list = filter_list
 
     def _filtering_bbox(self, pred_bboxlist, label_bboxlist):
-        '''
+        """
         filtering bbox by setting the bbox.valid flag
-        '''
+        """
         for func in self.filter_list:
             func(pred_bboxlist, label_bboxlist)
 
@@ -583,10 +583,10 @@ class Bbox_Metric_Record(Classif_Metric_Record):
                 cur_record[k] += v
 
     def eval_statistics(self, pred_bboxlist, label_bboxlist):
-        '''
+        """
         evaluate model for the given example (prediction-label pair)
         both pred_bboxlist & label_bboxlist assumed to be a list of definition for class Det_Bounding_Box 
-        '''
+        """
         rst_record = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: 0)))
         self.accumulate_rst(pred_bboxlist, label_bboxlist, rst_record=rst_record)
         self._cal_stat_from_rstrecord(rst_record=rst_record)
@@ -594,9 +594,9 @@ class Bbox_Metric_Record(Classif_Metric_Record):
         return rst_record
 
     def accumulate_rst(self, pred_bboxlist, label_bboxlist, rst_record):
-        '''
+        """
         accumulate the result over the whole dataset
-        '''
+        """
         pred_list = [utils.Det_Bounding_Box(bbox) for bbox in pred_bboxlist]
         label_list = [utils.Det_Bounding_Box(bbox) for bbox in label_bboxlist]
         self._filtering_bbox(pred_list, label_list)
@@ -613,28 +613,28 @@ class Bbox_Metric_Record(Classif_Metric_Record):
             self._cal_clsrecord_from_scorematrix(score_matrix, pred_flag, label_flag, cls_record=cls_record)
 
     def evaluate_model(self, model_func, input_label_itr, is_onehot=True):
-        '''
+        """
         request an input_label_itr to fetch (input, label) pair in a for loop;
         a model_func to get probablistic prediction given (input, label) pair
-        '''
+        """
         for batch_input, label_bboxlist in input_label_itr():
             pred_bboxlist = model_func(batch_input, label_bboxlist) # pred_bboxlist should be a valid definition
             self.accumulate_rst(pred_bboxlist=pred_bboxlist, label_bboxlist=label_bboxlist, rst_record=self.rst_record)
         self._cal_stat_from_rstrecord(self.rst_record)
 
     def clear_cur_epoch(self):
-        '''
+        """
         clear the remaining result & stat
-        '''
+        """
         self.example_cnt = 0
         self.prob_list = []
         self.rst_record = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: 0)))
         gc.collect()
 
     def print_result(self, mean_over_thr=True, mean_over_class=True, rst_record=None, raw_stat=False):
-        '''
+        """
         print the calculated stat record
-        '''
+        """
         def __print_dict(d, except_k=[]):
             for k, v in d.items():
                 if k not in except_k:
@@ -676,9 +676,9 @@ class Tracking_SOT_Record(Metric_Record):
         self.track_record = {}
 
     def accumulate_rst(self, label, pred, track_key=None, rst_record=None):
-        '''
+        """
         accumulate the result over the whole dataset, one track a time
-        '''
+        """
         if rst_record is None:
             rst_record = self.rst_record
 
@@ -703,9 +703,9 @@ class Tracking_SOT_Record(Metric_Record):
         record['mean_iou'] = record['iou_sum'] / record['frame_cnt']
 
     def get_result(self, rst_record=None):
-        '''
+        """
         calculate and return the result of evaluation
-        '''
+        """
         if rst_record is None:
             rst_record = self.rst_record
         self._cal_stat(rst_record)

@@ -1,20 +1,20 @@
 #!/usr/bin/env python
 # coding: utf-8
-'''
+"""
 module: utilities for bounding box processing, including:
     xyxy <-> xywh,
     IoU, 
     crop, 
-'''
+"""
 
 import numpy as np
 
 
 def xyxy_to_xywh_int(xyxy, dtype=int):
-    '''
+    """
     convert [xmin, ymin, xmax, ymax] -> [x-center, y-center, w, h]
     xy in screen coord => x/y as matrix col/row idx
-    '''
+    """
     xc, yc = (xyxy[0] + xyxy[2]) / 2, (xyxy[1] + xyxy[3]) / 2  # xmin, ymin, xmax, ymax
     h = xyxy[3] - xyxy[1]
     w = xyxy[2] - xyxy[0]
@@ -29,10 +29,10 @@ xyxy_to_xywh = xyxy_to_xywh_int  # alias
 
 
 def xywh_to_xyxy_int(xywh, dtype=int):
-    '''
+    """
     convert [x-center, y-center, w, h] -> [xmin, ymin, xmax, ymax]
     xywh in screen coord => x-w/y-h as matrix idx-range in col/row axis
-    '''
+    """
     w_2 = xywh[2] / 2
     h_2 = xywh[3] / 2
     # compensate for jitter (grounding due to int conversion in xyxy_to_xywh)
@@ -46,16 +46,16 @@ xywh_to_xyxy = xywh_to_xyxy_int  # alias
 
 
 def calc_overlap_interval(int1, int2):
-    '''
+    """
     calculate the overlaped interval of 2 intervals ([0] for min val, [1] for max val)
-    '''
+    """
     return np.maximum(0, np.minimum(int1[1], int2[1]) - np.maximum(int1[0], int2[0]))
 
 def calc_IoU(box1, box2):
-    '''
+    """
     calculate the intersection over union for 2 xyxy bbox
     (may broadcast to 2 box arr)
-    '''
+    """
     int_x = calc_overlap_interval((box1[0], box1[2]), (box2[0], box2[2]))
     int_y = calc_overlap_interval((box1[1], box1[3]), (box2[1], box2[3]))
     intersection = int_x * int_y
@@ -66,9 +66,9 @@ def calc_IoU(box1, box2):
     return intersection / union
 
 class Bounding_Box(object):
-    '''
+    """
     bounding box class wrapper
-    '''
+    """
     def __init__(self, box_def, def_type='xywh'):
         if def_type == 'xywh':
             self.x_var = [box_def[0] - int(box_def[2] / 2), box_def[0] + int(box_def[2] / 2)]
@@ -95,9 +95,9 @@ class Bounding_Box(object):
 
 
 class Det_Bounding_Box(object):
-    '''
+    """
     bounding class with more granularity (e.g. box over points)
-    '''
+    """
     def __init__(self, box_def):
         if type(box_def) is list:
             self.__init_from_list(box_def)
@@ -144,9 +144,9 @@ class Det_Bounding_Box(object):
                 setattr(self, k, v)
 
     def to_polar(self, origin=(0, 0)):
-        '''
+        """
         convert to polar coord given the origin
-        '''
+        """
         complex_xy = [xy[0] - origin[0] + 1j * (xy[1] - origin[1]) for xy in self.xy]
         self.dist = [np.abs(c_xy) for c_xy in complex_xy]
         self.angle = [np.angle(c_xy) for c_xy in complex_xy]
@@ -156,23 +156,23 @@ class Det_Bounding_Box(object):
 
     @staticmethod
     def overlap_interval(int_1, int_2):
-        '''
+        """
         calculate the overlaped interval of 2 intervals ([0] for min, [1] for max)
-        '''
+        """
         return max(0, min(int_1[1], int_2[1]) - max(int_1[0], int_2[0]))
 
     @staticmethod
     def xy_intersection(box1, box2):
-        '''
+        """
         calculate the intersection of 2 bbox using the cartesian coord
-        '''
+        """
         sec_x = Det_Bounding_Box.overlap_interval(box1.x_var, box2.x_var)
         sec_y = Det_Bounding_Box.overlap_interval(box1.y_var, box2.y_var)
         return sec_x * sec_y
 
     @staticmethod
     def elem_intersection(box1, box2):
-        '''
+        """
         calculate the intersection of elements contained by bboxes
-        '''
+        """
         return len(set.intersection(box1.elem, box2.elem))

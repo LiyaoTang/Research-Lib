@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 # coding: utf-8
-'''
+"""
 module: siam tracker
-'''
+"""
 
 import torch
 import numpy as np
@@ -10,17 +10,17 @@ import numpy as np
 from ..base import Base_Tracker
 
 class Siamese_Tracker(Base_Tracker):
-    '''
+    """
     base class for siamese tracker
-    '''
+    """
     def get_subwindow(self, img, xy, model_size, original_size, channel_avg, gpu_id=0):
-        '''
+        """
         img: bgr based image
         xy: center position
         model_sz: exemplar size
         original_sz: original size
         avg_chans: channel average
-        '''
+        """
         if isinstance(xy, float):  # xy = [x, y]
             xy = [xy, xy]
         img_shape = img.shape

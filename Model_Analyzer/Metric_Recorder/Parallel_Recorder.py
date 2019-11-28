@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 # coding: utf-8
-'''
+"""
 module: multiprocessing wrapper for Metric_Recorder
-'''
+"""
 
 import os
 import sys
@@ -11,9 +11,9 @@ import multiprocessing as mp
 from .. import Loader as loader
 
 class Parallel_Recorder(object):
-    '''
+    """
     wrapper class to load the model & evaluate with recorder in separate process
-    '''
+    """
 
     def __init__(self, recorder, feeder=None, log_file=None):
         super(Parallel_Recorder, self).__init__()
@@ -26,9 +26,9 @@ class Parallel_Recorder(object):
         self.process = None
 
     def _evaluate_model(self, model_config):
-        '''
+        """
         control flow to load & evaluate model (to be run in separate process)
-        '''
+        """
         model_config = dill.loads(model_config)
         if 'model_func' in model_config and model_config['model_func']:
             model_func = model_config['model_func']
@@ -63,9 +63,9 @@ class Parallel_Recorder(object):
         self.recorder.clear_cur_epoch()
 
     def evaluate_model(self, model_config):
-        '''
+        """
         start another process to run
-        '''
+        """
         if self.process is not None:
             self.process.join()  # end the last round
         self.process = mp.Process(target=self._evaluate_model, args=[], kwargs={'model_config': dill.dumps(model_config)})

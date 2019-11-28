@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 # coding: utf-8
-'''
+"""
 module: base class for feeding data
-'''
+"""
 
 import os
 import re
@@ -11,9 +11,9 @@ import numpy as np
 
 
 class File_Traverser(object):
-    '''
+    """
     traverse file given root dir with an optional fileter
-    '''
+    """
     def __init__(self, data_dir, re_expr='.*'):
         self.data_dir = data_dir
         self.re_expr = re_expr
@@ -32,32 +32,32 @@ class File_Traverser(object):
         return bool(re.fullmatch(self.re_expr, string))
     
     def traverse_file(self):
-        '''
+        """
         yield dir path and file name
-        '''
+        """
         for dirpath, fname in self.path_list:
             yield(dirpath, fname)
 
     def traverse_file_path(self):
-        '''
+        """
         yield joined path
-        '''
+        """
         for dirpath, fname in self.path_list:
             yield os.path.join(dirpath, fname)
 
     def list_all_file_path(self, sort=True):
-        '''
+        """
         get all paths to selected files in list
-        '''
+        """
         path_list = self.path_list.copy()
         if sort:
             path_list = sorted(path_list)
         return path_list
 
 class Gen_Feeder(object):
-    '''
+    """
     base class to feed from a (list of) data dir(s)
-    '''
+    """
     def __init__(self, data_dir, class_num, class_name=None, re_expr='.*', use_onehot=True, split=None, weight_type='', norm_type=''):
         self.data_dir = data_dir
         self.traverser = File_Traverser(data_dir, re_expr=re_expr)
@@ -92,9 +92,9 @@ class Gen_Feeder(object):
             self.switch_split(0)
 
     def switch_split(self, split_n, shuffle=False):
-        '''
+        """
         switch the split of the path list to use
-        '''
+        """
         if shuffle:
             self.shuffle(split_n)
         self.traverser.path_list = self.path_split[split_n]
@@ -107,9 +107,9 @@ class Gen_Feeder(object):
             np.random.shuffle(self.path_split[split_n])
 
     def _cal_weight(self):
-        '''
+        """
         calculate weight
-        '''
+        """
         def _cal_bal(): # calculate weight from current dataset
             cnt_arr = np.zeros(self.class_num)
             for _, cur_label in self.iterate_data():
@@ -137,9 +137,9 @@ class Gen_Feeder(object):
         raise NotImplementedError
 
     def _to_onehot(self, label_list):
-        '''
+        """
         transform **a 1-D list** of label into one-hot label
-        '''
+        """
         height = len(label_list)
         
         label = np.zeros((height, self.class_num), dtype=int)
@@ -151,18 +151,18 @@ class Gen_Feeder(object):
         raise NotImplementedError
 
     def iterate_data(self):
-        '''
+        """
         iterate through the dataset for once
         feed one example a time
-        '''
+        """
         for dirpath, name in self.traverser.traverse_file():
             yield from self._get_input_label_pair(dirpath, name)
 
     def get_all_data(self):
-        '''
+        """
         dangerous: feed all data at once
         use unless small enough & cannot partial fit
-        '''
+        """
         input_list = []
         label_list = []
         for cur_input, cur_label in self.iterate_data():
@@ -175,10 +175,10 @@ class Gen_Feeder(object):
         raise NotImplementedError
     
     def record_prediction(self, pred_func, model_name, output_dir='./Prediction', dataset_name='Data', overwrite=False, options=dict()):
-        '''
+        """
         record the prediction with the same dir struct as data
         must be provided a func to predict data in one file
-        '''
+        """
         #TODO: may transfer to a hd5f each dataset to obviate various dataset struct & to have consistent prediction struct
         for dirpath, name in self.traverser.traverse_file():
             # create corresponding dir struct
@@ -191,24 +191,24 @@ class Gen_Feeder(object):
             self._record_pred(dirpath, name, pred_func, model_name, out_subdir, overwrite)
 
     def iterate_with_metadata(self, data_dir, data_name):
-        '''
+        """
         iterate over data with corresponding meta data
-        '''
+        """
         raise NotImplementedError
 
 class Gen_CVFeeder(Gen_Feeder):
-    '''
+    """
     feed data in a cross-validation fashion
     TODO: finish building the class: to cooperate with cross validation
-    '''
+    """
     def __init__(self, data_dir, class_num, fold_num, re_expr='.*', use_onehot=True):
         super(Gen_CVFeeder, self).__init__(data_dir, class_num, re_expr=re_expr, use_onehot=use_onehot, split=[1] * fold_num)
         raise NotImplementedError
 
 class Feeder(object):
-    '''
+    """
     base class to feed data based on a file to map: key -> input-label pair
-    '''
+    """
     def __init__(self, data_ref_path, class_num, class_name=None, use_onehot=True, config={}):
         self.data_ref_path = data_ref_path
         self.data_ref = None
@@ -225,9 +225,9 @@ class Feeder(object):
         self.ext_module = dict()
 
     def _to_onehot(self, label_list):
-        '''
+        """
         transform **a 1-D list** of label into one-hot label
-        '''
+        """
         height = len(label_list)
         
         label = np.zeros((height, self.class_num), dtype=int)
@@ -242,16 +242,16 @@ class Feeder(object):
         raise NotImplementedError
 
     def iterate_data(self):
-        '''
+        """
         iterate through the dataset for once; one example a time
-        '''
+        """
         for ref in self.data_ref:
             yield self._get_input_label_pair(ref)
 
     def iterate_forever(self, batch_size=None):
-        '''
+        """
         iterate data/batch as infinite generator
-        '''
+        """
         data_gen = self.iterate_data()
         while True:
             try:
@@ -262,22 +262,22 @@ class Feeder(object):
                 pass
 
     def reset(self):
-        '''
+        """
         reset & randomize the feeder
-        '''
+        """
         np.random.shuffle(self.data_ref)
 
     def iterate_with_metadata(self):
-        '''
+        """
         iterate over data with corresponding meta data
-        '''
+        """
         raise NotImplementedError
 
 class Parallel_Feeder(object):
-    '''
+    """
     construct a parallel py-process to load data: enable loading-training pipeline
     warning: should NOT modify passed in feeder afterwards
-    '''
+    """
     def __init__(self, feeder, buffer_size=5, worker_num=1, verbose=False):
         super(Parallel_Feeder, self).__init__()
 
@@ -310,9 +310,9 @@ class Parallel_Feeder(object):
             w.start()
 
     def shutdown(self):
-        '''
+        """
         stop workers & clean up
-        '''
+        """
         for p in self.__worker:
             p.terminate()
         for p in self.__worker:
@@ -324,9 +324,9 @@ class Parallel_Feeder(object):
         self.__config_lock = None
             
     def refresh(self, feeder=None, config=None):
-        '''
+        """
         clean up & prepare for new workers
-        '''
+        """
         self.shutdown()
         if config:
             for k in config:
@@ -349,9 +349,9 @@ class Parallel_Feeder(object):
         return config
 
     def set_config(self, config):
-        '''
+        """
         change the config on-the-fly
-        '''
+        """
         self.__config_lock.acquire()
         for k in config:
             self.__config[k] = config[k]
@@ -382,9 +382,9 @@ class Parallel_Feeder(object):
                 break
 
     def iterate_data(self, timeout=10):
-        '''
+        """
         entry for main process: iterate through dataset for once; one batch a time
-        '''
+        """
         self.__config['wrapable'] = False
         self.refresh()
         self._create_worker() # workers start runnning
@@ -405,9 +405,9 @@ class Parallel_Feeder(object):
                 break
 
     def iterate_forever(self, timeout=10):
-        '''
+        """
         entry for main process: create running-forever workers and a handle func to get data
-        '''
+        """
         self.__config['wrapable'] = True
         self.refresh()
         self._create_worker()

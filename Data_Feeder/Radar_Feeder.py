@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 # coding: utf-8
-'''
+"""
 module: data pipeline for radar processing
-'''
+"""
 
 import os
 import re
@@ -23,10 +23,10 @@ __all__ = (
 
 
 class Corner_Radar_Points_Gen_Feeder(Gen_Feeder):
-    '''
+    """
     read, parse & feed the radar csv & label yaml file 
     note: all info in radar csv is parsed as float
-    '''
+    """
     def __init__(self, data_dir, class_num=2, class_name=['other', 'car'], select_cols=None, header=True, split=None,
                  file_re='.*\.csv', line_re='\t (?!3).*', use_onehot=True, sort_cols=True):
         super(Corner_Radar_Points_Gen_Feeder, self).__init__(data_dir, class_num, class_name, file_re, use_onehot, split)
@@ -145,9 +145,9 @@ class Corner_Radar_Points_Gen_Feeder(Gen_Feeder):
         df.to_csv(os.path.join(out_subdir, data_name))
     
     def load_with_metadata(self, data_dir, data_name, pred_dir):
-        '''
+        """
         load data in one file into a list of dict with corresponding prediction, input & picture
-        '''
+        """
         mpimg = __import__('matplotlib.image', fromlist=[''])
         # get input, xy, label pair
         cur_id_arr, cur_input = self._get_input(data_dir, data_name)
@@ -175,18 +175,18 @@ class Corner_Radar_Points_Gen_Feeder(Gen_Feeder):
         return [{'input': cur_input, 'input_xy': xy_arr, 'label': cur_label, 'pred': cur_pred, 'img': cur_pic}]
 
     def iterate_with_metadata(self, pred_dir):
-        '''
+        """
         iterate data example with their metadata (prediction & image)
-        '''
+        """
         for dir_path, fname in self.traverser.traverse_file():
             yield self.load_with_metadata(dir_path, fname, pred_dir)[0]
 
 
 class Corner_Radar_Boxcenter_Gen_Feeder(Gen_Feeder):
-    '''
+    """
     read, parse & feed the radar csv & label (box center) yaml file
     note: voxelization for object localization
-    '''
+    """
     def __init__(self, data_dir, select_cols, class_num=2, class_name=['n', 'c'], focus_size=(15, 20), resolution=0.5,
                  header=True, file_re='.*\.csv', line_re='\t (?!3).*', split=None, weight_type='', norm_type=''):
         super(Corner_Radar_Boxcenter_Gen_Feeder, self).__init__(data_dir, class_num, class_name, file_re, use_onehot=True, split=split)
@@ -265,9 +265,9 @@ class Corner_Radar_Boxcenter_Gen_Feeder(Gen_Feeder):
             self.norm_params = _cal_norm_params()
 
     def _fill_image(self, xy_arr, feature_arr, img):
-        '''
+        """
         in-place fill image with clipping
-        '''
+        """
         xy_arr = np.around((xy_arr + self.focus_size) / self.resolution).astype(int)  # round (already in cartesian coord)
         infocus_idx = np.where(np.logical_and(0 <= xy_arr, xy_arr < self.focus_index).all(axis=1))  # assure in focus
         img[xy_arr[infocus_idx, 0], xy_arr[infocus_idx, 1]] = feature_arr[infocus_idx]  # direct mapping - x as row, y as col
@@ -327,9 +327,9 @@ class Corner_Radar_Boxcenter_Gen_Feeder(Gen_Feeder):
     def record_prediction(self, pred_func, model_name, output_dir='./Prediction', dataset_name='Data', overwrite=False, options={'pred_type': 'csv',
                                                                                                                                  'protobuf_path': '../../Data/corner/evaluate-test',
                                                                                                                                  'proto_post': '.prototxt'}):
-        '''
+        """
         extended to accomodate protobuf
-        '''
+        """
         self.pred_opt = options
         pred_type = options['pred_type']
         if pred_type == 'protobuf':
@@ -385,9 +385,9 @@ class Corner_Radar_Boxcenter_Gen_Feeder(Gen_Feeder):
         df.to_csv(os.path.join(out_subdir, data_name), index=False)
     
     def load_with_metadata(self, data_dir, data_name, pred_dir):
-        '''
+        """
         load data in one file with corresponding prediction & picture
-        '''
+        """
         # get input & label pair
         cur_input = self._get_input(data_dir, data_name)
         yaml_path = self._get_label_path_given_input(data_dir, data_name) # path for corresponding yaml file
@@ -411,9 +411,9 @@ class Corner_Radar_Boxcenter_Gen_Feeder(Gen_Feeder):
 
 
 class Back_Radar_Bbox_Gen_Feeder(Gen_Feeder):
-    '''
+    """
     read, parse & feed the back radar data from proto (label) and txt (pred output) file
-    '''
+    """
     def __init__(self, data_dir, class_num=1, class_name=['car'], re_expr='.*\.prototxt', use_onehot=True, split=None,
                  weight_type='', norm_type='', resolution=0.5, label_type='protobuf', pred_type='txt',
                  config={'ext_module':{}, 'offset':{'pred':0, 'label':0}, 'skip':''}):
@@ -609,14 +609,14 @@ class Back_Radar_Bbox_Gen_Feeder(Gen_Feeder):
             yield {'input': cur_input, 'input_xy': input_xy, 'label': label_bboxlist, 'pred': pred_bboxlist, 'time_stamp': pred_time}
 
     def iterate_with_metadata(self, pred_dir):
-        '''
+        """
         iterate data example with aligned recorded prediction
-        '''
+        """
         for dirpath, name in self.traverser.traverse_file():
             yield from self._iter_with_metadata_given_file(dirpath, name, pred_dir)
 
     def load_with_metadata(self, data_dir, data_name, pred_dir):
-        '''
+        """
         load data in one file into a list of dict with corresponding prediction & input
-        '''
+        """
         return [data_dict for data_dict in self._iter_with_metadata_given_file(data_dir, data_name, pred_dir)]

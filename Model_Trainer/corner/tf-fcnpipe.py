@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 # coding: utf-8
-'''
+"""
 construct CNN given setting
-'''
+"""
 
 import sys
 root_dir = '../../'
@@ -26,7 +26,7 @@ import Model_Constructer as constructer
 
 from collections import defaultdict
 
-''' parsing args '''
+""" parsing args """
 
 model_group_name = 'tf-fcnpipe'
 parser = constructer.Default_Optparser(model_group_name, root_dir, class_num=2)
@@ -113,7 +113,7 @@ else:
 # reset tf graph environment before everything
 tf.reset_default_graph()
 
-''' constructing dataset '''
+""" constructing dataset """
 
 if options.use_tfdataset:  # tf dataset
     raise NotImplementedError
@@ -155,7 +155,7 @@ else:  # general feeder
 process = psutil.Process(os.getpid())
 print('mem usage after data loaded:', process.memory_info().rss / 1024 / 1024, 'MB')
 
-''' constructing model '''
+""" constructing model """
 
 with tf.variable_scope('input'):
     if options.use_tfdataset:
@@ -181,7 +181,7 @@ pipe = constructer.FCN_Pipe_Constructer(conv_struct=options.conv_struct,
 process = psutil.Process(os.getpid())
 print('mem usage after model constructed:', process.memory_info().rss / 1024 / 1024, 'MB')
 
-''' training & monitoring '''
+""" training & monitoring """
 
 # saver to save model
 saver = tf.train.Saver(max_to_keep=None)

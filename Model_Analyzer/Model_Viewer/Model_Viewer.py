@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 # coding: utf-8
-'''
+"""
 module: construct QT viewer for model analysis
 script: display the viewer UI
-'''
+"""
 
 
 import sys
@@ -31,9 +31,9 @@ from matplotlib.figure import Figure
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 
 class Matlibplot_Widget(qtwg.QWidget):
-    '''
+    """
     qt widget to display a matplotlib image - can be interactive
-    '''
+    """
     def __init__(self, interactive=True, cmap='rainbow'):
         super(Matlibplot_Widget, self).__init__()
         # plot setting
@@ -123,13 +123,13 @@ class Matlibplot_Widget(qtwg.QWidget):
             self.ann_list[-1].draggable()
 
     def plot(self, points=None, boxes=None, circles=None, color_name=None):
-        '''
+        """
         plot the given data:
             point_arr - scatter points
             box_list - rectangles
             circ_list - circles
         with annotation, color array and name for different color
-        '''
+        """
         # if xy_arr is None:
         #     xy_arr = np.random.randn(50).reshape(25,2)
         # if color_arr is None:
@@ -209,9 +209,9 @@ class Matlibplot_Widget(qtwg.QWidget):
 
 
 class Model_Viewer(qtwg.QMainWindow):
-    '''
+    """
     view & analyze the model with input, label, its prediction and meta data
-    '''
+    """
     def __init__(self, dataset_name, dataset_dir, pred_dir, feeder, models=[], log_dir='./Log'):
         super(Model_Viewer, self).__init__()
 
@@ -580,9 +580,9 @@ class Model_Viewer(qtwg.QMainWindow):
             self.need_to_save = False
 
     def closeEvent(self, event):
-        '''
+        """
         Reimplement the closeEvent() event handler: question dialog if unsaved worked found
-        '''
+        """
         if self.need_to_save:
             reply = qtwg.QMessageBox.question(self, 'Message', 'Are you sure you want to quit? Any unsaved work will be lost.',
                                             qtwg.QMessageBox.Save | qtwg.QMessageBox.Discard | qtwg.QMessageBox.Cancel,
@@ -602,9 +602,9 @@ class Model_Viewer(qtwg.QMainWindow):
                 event.ignore()
 
     def _delete_items(self, layout):
-        '''
+        """
         recursively delete contents in a layout
-        '''
+        """
         if layout is not None: 
             while layout.count(): 
                 item = layout.takeAt(0) 

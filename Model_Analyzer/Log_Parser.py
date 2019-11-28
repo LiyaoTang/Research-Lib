@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 # coding: utf-8
-'''
+"""
 module: dirty codes to parse log for each project-dependent model
 script: show the result of parsing
-'''
+"""
 
 import os
 import re
@@ -21,10 +21,10 @@ class Log_Parser(object):
         raise NotImplementedError
 
     def _parse_tflog(self, log):
-        '''
+        """
         return a dict with 'train': [ep0 metric dict, ep1 metric dict, ...], 'val': [ep0 metric dict, ep1 metric dict, ...]
         return None if log file not tagged as finished at the last line
-        '''
+        """
 
         def _parse_into_metrics(line, ep_metric_dict):
             line = line.split()

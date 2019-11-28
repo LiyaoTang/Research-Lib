@@ -1,22 +1,22 @@
 #!/usr/bin/env python
 # coding: utf-8
-'''
+"""
 module: some self-constructed torch ops, mostly functional
-'''
+"""
 
 import torch.nn as nn
 import torch.nn.functional as F
 
 
-''' padding '''
+""" padding """
 
 def average_padding(input, padding):
-    '''
+    """
     only tested for 2D padding
     Args:
         inputs: Assumed in NCHW format
         padding: A tuple-like value to specify padding at one side
-    '''
+    """
     pad_val = input.mean(dim = (-1, -2))
     out_dims = input.size()
     out_dims = out_dims[:-2] + (out_dims[-2] + padding[-2] * 2, out_dims[-1] + padding[-1] * 2)  # expand HW only
@@ -28,13 +28,13 @@ def average_padding(input, padding):
     return out_tensor
 
 
-''' cross-correlation '''
+""" cross-correlation """
 
 
 def xcorr_fast(x, kernel):
-    '''
+    """
     group conv2d to calculate cross correlation, fast version
-    '''
+    """
     batch = kernel.size()[0]
     pk = kernel.view(-1, x.size()[1], kernel.size()[2], kernel.size()[3])
     px = x.view(1, -1, x.size()[2], x.size()[3])
@@ -44,9 +44,9 @@ def xcorr_fast(x, kernel):
 
 
 def xcorr_depthwise(x, kernel):
-    '''
+    """
     depthwise (channel-wise) cross correlation
-    '''
+    """
     batch = kernel.size(0)
     channel = kernel.size(1)
     x = x.view(1, batch*channel, x.size(2), x.size(3))
@@ -56,7 +56,7 @@ def xcorr_depthwise(x, kernel):
     return out
 
 
-''' loss '''
+""" loss """
 
 
 def cls_loss(pred, label, select):
@@ -86,13 +86,13 @@ def weight_l1_loss(pred_loc, label_loc, loss_weight):
     return loss.sum().div(b)
 
 
-''' save & restore '''
+""" save & restore """
 
 
 def check_keys(model, state_dict):
-    '''
+    """
     check coverage between loaded var (state_dict) & model var (model.state_dict())
-    '''
+    """
     ckpt_keys = set(state_dict.keys())
     model_keys = set(model.state_dict().keys())
 
@@ -136,3 +136,20 @@ def restore(model, save_file, optimizer=None, device='cpu'):
     epoch = ckpt['epoch'] if 'epoch' in ckpt else 0
 
     return model, optimizer, epoch
+
+
+""" parallel & distributed compute """
+
+
+def data_parallel(module, input, device_ids, output_device=None):
+    if not device_ids:
+        return module(input)
+
+    if output_device is None:
+        output_device = device_ids[0]
+
+    replicas = nn.parallel.replicate(module, device_ids)  # replicate across devices
+    inputs = nn.parallel.scatter(input, device_ids)  # split the input across first-dim (batch)
+    replicas = replicas[:len(inputs)]  # guard against batch_size < gpu_num
+    outputs = nn.parallel.parallel_apply(replicas, inputs)  # start parallel compute
+    return nn.parallel.gather(outputs, output_device)  # gather the output (concat back into together in first-dim)

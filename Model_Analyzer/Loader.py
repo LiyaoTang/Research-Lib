@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 # coding: utf-8
-'''
+"""
 module: dirty codes to parse project-dependent model / dataset name to model object / data feeder
 script: prediction - load model & corresponding feeder, save its prediction onto disk
-'''
+"""
 
 import sys
 root_dir = '../'
@@ -18,9 +18,9 @@ import Data_Feeder as feeder
 
 
 class Model_Info(object):
-    '''
+    """
     class to store info of each model
-    '''
+    """
     def __init__(self, model_type, model_group, model_name, dirpath, log_dir, epoch=-1):
         super(Model_Info, self).__init__()
         self.type = model_type
@@ -34,9 +34,9 @@ class Model_Info(object):
         return '%s %s %s %s %s' % (self.type, self.group, self.name, self.dirpath, self.log_dir)
 
 class Model_Group(object):
-    '''
+    """
     class to specify model group info
-    '''
+    """
     def __init__(self, group_name, dirpath, log_dir):
         super(Model_Group, self).__init__()
         self.group_type = self.parse_model_type(group_name)
@@ -46,9 +46,9 @@ class Model_Group(object):
         self.models_info = [Model_Info(self.group_type, self.group_name, name, self.dirpath, self.log_dir) for name in self._find_models()]
 
     def parse_model_type(self, name):
-        '''
+        """
         get model type given name, raise TypeError if failed
-        '''
+        """
         if 'sk' in name:
             cur_type = 'sk'
         elif 'xgb' in name:
@@ -82,9 +82,9 @@ class Model_Group(object):
         return '\n'.join([md_info.__str__() for md_info in self.models_info])
 
 class Project_Loader(object):
-    '''
+    """
     parsing project-dependent mapping logic to regarding paths
-    '''
+    """
     def __init__(self, dataset_name, root_dir='../', verbose=False):
         if dataset_name not in ['corner', 'back']:
             raise TypeError('not supported dataset \"%s\"' % dataset_name)
@@ -112,9 +112,9 @@ class Project_Loader(object):
             self.print_info()
 
     def print_info(self):
-        '''
+        """
         print out parsed project info
-        '''
+        """
         print('root dir \"%s\"' % self.root_dir)
         print('dataset name \"%s\"' % self.dataset_name)
         print('model dir \"%s\"' % self.model_dir)
@@ -123,13 +123,13 @@ class Project_Loader(object):
         print('model groups\n%s' % '\n\n'.join([group.__str__() for group in self.model_groups]) )
 
     def select_model(self, model_group='.*', model_name='.*', sort=True):
-        '''
+        """
         select models with corresponding model group / name
         Args:
             model_group: search models in all groups that model_group can match
             model_name:  select models that model_name can match
             => to load all models, leave both as '.*'
-        '''
+        """
         selected_groups = [g for g in self.model_groups if re.fullmatch(model_group, g.group_name)]
         assert len(selected_groups) > 0
 
@@ -142,10 +142,10 @@ class Project_Loader(object):
         return selected_models
 
     def load_models(self, model_group='.*', model_name='.*', verbose=False, config={}):
-        '''
+        """
         load a selected model / model group with corresponding feeder,
         where config should be a dict containg all necessary config dict for all model**s**
-        '''
+        """
         selected_models = self.select_model(model_group, model_name)
 
         if 'feeder' in config and config['feeder'] is not None:
@@ -174,9 +174,9 @@ class Project_Loader(object):
         return self.models, self.feeder
 
     def _load_model(self, model_info, config):
-        '''
+        """
         parse to select a correct loader, where config contains special concern for models
-        '''
+        """
         model = None
         pred_prob = None
         if model_info.type == 'sk':
@@ -257,9 +257,9 @@ class Project_Loader(object):
         return feeder_class, gen_feeder
 
     def make_prediction(self, pred_dir=None, overwrite=False, options=dict()):
-        '''
+        """
         make prediction after model selected
-        '''
+        """
         if pred_dir is None:
             pred_dir = self.pred_dir
         for md in self.models:

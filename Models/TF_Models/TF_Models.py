@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 # coding: utf-8
-'''
+"""
 module: classes to construct TF models
-'''
+"""
 
 import types
 import numpy as np
@@ -12,9 +12,9 @@ from . import TF_Ops as tfops
 from . import TF_Modules as tfm
 
 class TF_Model(object):
-    '''
+    """
     base class to config TF model with common options
-    '''
+    """
     def __init__(self, class_num, tf_input, tf_label, tf_phase, config_dict={}):
         super(TF_Model, self).__init__()
         
@@ -60,9 +60,9 @@ class TF_Model(object):
                     self.net = self.net / norm_params['std']
 
     def print_attributes(self):
-        '''
+        """
         print all attributes
-        '''
+        """
         for argn in dir(self):
             arg = getattr(self, argn)
             if not argn.startswith('_') and not isinstance(arg, types.BuiltinFunctionType):
@@ -70,9 +70,9 @@ class TF_Model(object):
 
 
 class FCN_Pipe(TF_Model):
-    '''
+    """
     construct a FCN-pipe (FCN with no downsampling) model
-    '''
+    """
     def __init__(self, conv_struct, class_num, tf_input, tf_label, tf_phase, config_dict={}):
         super(FCN_Pipe, self).__init__(class_num=class_num, tf_input=tf_input, tf_label=tf_label, tf_phase=tf_phase,
                                                    config_dict=config_dict)
@@ -146,9 +146,9 @@ class FCN_Pipe(TF_Model):
 
 
 class Unet(FCN_Pipe):
-    '''
+    """
     construct a FCN-pipe (FCN with no downsampling) model
-    '''
+    """
     def __init__(self, conv_struct, class_num, tf_input, tf_label, tf_phase, config_dict={}):
         super(Unet, self).__init__(class_num=class_num, tf_input=tf_input, tf_label=tf_label, tf_phase=tf_phase,
                                                config_dict=config_dict)
@@ -220,9 +220,9 @@ class Unet(FCN_Pipe):
 
     @staticmethod
     def _get_biliner_kernel(size):
-        '''
+        """
         make a 2d bilinear (square) kernel suitable for upsampling of the given size
-        '''
+        """
         factor = (size + 1) // 2
         if size % 2 == 1:
             center = factor - 1
@@ -232,10 +232,10 @@ class Unet(FCN_Pipe):
         return (1 - abs(og[0] - center) / factor) * (1 - abs(og[1] - center) / factor)
 
     def _get_bilinear_weights(self, factor, in_channel, out_channel):
-        '''
+        """
         create weights matrix for transposed convolution with bilinear filter
         initialization.
-        '''        
+        """        
         filter_size = self._get_deconv_kernel_size(factor)
 
         weights = np.zeros((filter_size, # height
@@ -294,16 +294,16 @@ class Unet(FCN_Pipe):
 
 
 class Re3_Tracker(object):
-    '''
+    """
     replicate & extend the re3 tracking model from paper:
     Re3 : Real-Time Recurrent Regression Networks for Visual Tracking of Generic Objects (https://arxiv.org/abs/1705.06368)
-    '''
+    """
     def __init__(self, tf_input, tf_label, prev_state=None, feeder=None, lstm_size=512, config={}):
-        '''
+        """
         tf_input: [batch, time, img_h, img_w, img_channel] for bbox_encoding in ['mask', 'mesh'] => cur img + mask
                   [batch, time, 2, img_h, img_w, img_channel] for bbox_encoding in ['corner', 'center'] => one cur crop, one prev
         tf_label: [batch, time, 4] (x,y,w,h)
-        '''
+        """
         self.tf_input = tf_input
         self.tf_label = tf_label
         self.prev_state = tuple(prev_state) if prev_state is not None else None
@@ -475,9 +475,9 @@ class Re3_Tracker(object):
             #     self.stablize_step[k] = optimizer.minimize(self.loss, global_step=global_step, var_list=v_list)
 
     def inference(self, track, bboxes, sess, display_func=None):
-        '''
+        """
         given a single track, output inferenced track result
-        '''
+        """
         prev_state = tuple([np.zeros((1, self.lstm_size)) for _ in range(4)])
         out_bbox = [bboxes[0]]  # the initial box
         prev_input = None
@@ -502,15 +502,15 @@ class Re3_Tracker(object):
 
 
 class Val_Model(object):
-    '''
+    """
     run validation for model in a separate thread
-    '''
+    """
     def __init__(self, sess, model, feeder, recorder, var_dict, config={}):
-        '''
+        """
         sess: current active session
         model: a graph same as & separate from the one being trained
         var_dict: ckpt var -> var in model for validation
-        '''
+        """
         self.threading = __import__('threading', fromlist=[''])
         self.sess = sess
         self.model = model
@@ -521,15 +521,15 @@ class Val_Model(object):
         self.eval_cnt = 0
 
     def inference(self, cur_input, cur_label):
-        '''
+        """
         get the model inference
-        '''
+        """
         raise NotImplementedError
 
     def record_val(self, ckpt_path, global_step=None):
-        '''
+        """
         run the model inference and record the result
-        '''
+        """
         self.saver.restore(self.sess, ckpt_path)
         for cur_input, cur_label in self.feeder.iterate_data():
             cur_pred = self.inference(cur_input, cur_label)

@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 # coding: utf-8
-'''
+"""
 script: train siamrpn tracker
-'''
+"""
 
 import sys
 root_dir = '../../'
@@ -16,7 +16,7 @@ import psutil
 import Utilities as utils
 
 
-''' parsing args '''
+""" parsing args """
 
 cfg = utils.Config()
 cfg.merge_yaml('./config.yaml')

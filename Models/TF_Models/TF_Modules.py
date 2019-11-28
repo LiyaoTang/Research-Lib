@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 # coding: utf-8
-'''
+"""
 module: some tf modeuls from classic networks
-'''
+"""
 
 import os
 import numpy as np
@@ -11,12 +11,12 @@ from . import TF_Ops as tfops
 
 
 def fcn_pipe(input, conv_struct, use_batchnorm=False, is_training=None, scope='pipe'):
-    '''
+    """
     parse conv_struct: e.g. 3-16;5-8;1-32 | 3-8;1-16 | 1
     => concat[ 3x3 out_channel=16, 5x5 out_channel=8, 1x1 out_channel=32]
     => followed by inception concat [3x3 out_channel=8, 1x1 out_channel=16] and so on ...
     => output with a 1x1 conv
-    '''
+    """
     with tf.variable_scope(scope):
         net = input
         if len(conv_struct) > 1: # if any hidden layer
@@ -42,10 +42,10 @@ def fcn_pipe(input, conv_struct, use_batchnorm=False, is_training=None, scope='p
     return net
 
 def alexnet_conv_layers(input, auxilary_input=None, prelu_initializer=tf.constant_initializer(0.25), fuse_type='flat'):
-    '''
+    """
     self-implemented AlexNet, with skip-connection
     input: images, expected to be of [batch, width, height, channel]
-    '''
+    """
     def flatten(feat_map):
         feat_map = tf.transpose(feat_map, perm=[0, 3, 1, 2])
         feat_map = tfops.remove_axis(feat_map, [2, 3])
@@ -117,14 +117,14 @@ def alexnet_conv_layers(input, auxilary_input=None, prelu_initializer=tf.constan
     return feat_concat
 
 def re3_lstm_tracker(input, num_unrolls, batch_size, prev_state=None, lstm_size=512, rnn_type='lstm'):
-    '''
+    """
     input: object features in time sequence, expected to be [batch, time, feat_t + feat_t-1], with time = num_unrolls
     prev_state: the initial state for RNN cell, set to placeholder to enable single-step inference
     TODO: migrate to TF 2.0: 
         contrib.rnn.LSTMCell -> keras.layers.LSTMCell
         contrib.rnn.LSTMStateTuple -> get_initial_tuple
         dynamic_rnn -> keras.layers.RNN
-    '''
+    """
     assert rnn_type in ['lstm']
     with tf.variable_scope('lstm1'):
         lstm1 = tf.contrib.rnn.LSTMCell(lstm_size)

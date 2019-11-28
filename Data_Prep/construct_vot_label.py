@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # coding: utf-8
-'''
+"""
 script: construct a npy file for label of ILSVRC2015 detectoin from video (VID) dataset
     constructed array: [
                         [package_id, video_id, frame_id, track_id, class_id, occludded, xmin, ymin, xmax, ymax],
@@ -9,7 +9,7 @@ script: construct a npy file for label of ILSVRC2015 detectoin from video (VID) 
     ordered by: first video id, then track id, then frame id => all labels for a single track are next to each other
     => construct MOT data into VOT label
 TODO: enable parallel computing
-'''
+"""
 
 import os
 import cv2

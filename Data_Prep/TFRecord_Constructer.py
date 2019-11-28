@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 # coding: utf-8
-'''
+"""
 module: construct TFRecord dataset given other formats
-'''
+"""
 
 import os
 import re
@@ -11,9 +11,9 @@ import numpy as np
 import tensorflow as tf
 
 class TFRecord_Constructer(object):
-    '''
+    """
     base class to construct tfrecord
-    '''
+    """
     def __init__(self, input_dir, output_file, re_expr='.*', recursive=True):
         self.input_dir = input_dir
         self.output_file = output_file
@@ -34,9 +34,9 @@ class TFRecord_Constructer(object):
                     yield(dirpath, name)
     
     def collect_meta_data(self, meta_data_file):
-        '''
+        """
         implemented in derived class: collect meta data e.g. mean, std, class statistics
-        '''
+        """
         raise NotImplementedError
 
     def _get_raw_input_label_pair(self, dirpath, name):
@@ -46,9 +46,9 @@ class TFRecord_Constructer(object):
         raise NotImplementedError
 
     def write_into_record(self):
-        '''
+        """
         frame work to write into .tfrecord file
-        '''        
+        """        
         with tf.python_io.TFRecordWriter(self.output_file) as writer:
             for dirpath, name in self._traverse_file(): # traverse
                 input_data_raw, label_data_raw = self._get_raw_input_label_pair(dirpath, name)
@@ -56,9 +56,9 @@ class TFRecord_Constructer(object):
                 writer.write(example.SerializeToString()) # write into tfrecord
 
 class txtData_Constructor(TFRecord_Constructer):
-    '''
+    """
     construct tf record given front-radar txt file
-    '''
+    """
     def __init__(self, input_dir, output_file, img_shape_2D, class_num,
                  re_expr='dw_((?!_label).)*\.txt', recursive=True, use_one_hot=True):
         super(txtData_Constructor, self).__init__(input_dir, output_file, re_expr, recursive)
@@ -108,9 +108,9 @@ class txtData_Constructor(TFRecord_Constructer):
         return label
 
     def collect_meta_data(self, norm_param_file=None):
-        '''
+        """
         collect: mean, std, class ratio
-        '''
+        """
         class_cnt = np.zeros(self.class_num)
         mean = 0
         std = 0

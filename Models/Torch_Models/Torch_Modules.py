@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 # coding: utf-8
-'''
+"""
 module: some torch modules/blocks from classic networks
-'''
+"""
 
 import torch.nn as nn
 import torch.nn.functional as F
@@ -10,18 +10,18 @@ from . import Torch_Ops as torch_ops
 from . import Torch_Layers as torch_layers
 
 
-''' backbone '''
+""" backbone """
 
 
 class AlexNet(nn.Module):
-    '''
+    """
     moddified AlexNet where, 
         reduced conv stride & pooling => better spatial resolution for tracking
         removed group in conv2 & conv4 => more parameters
         batchnorm => believed to be better than lrn-norm
 
     width_mult: to double the channel
-    '''
+    """
 
     def __init__(self, width_mult=1):
         super(AlexNet, self).__init__()
@@ -102,10 +102,10 @@ class AlexNetLegacy(nn.Module):
 
 
 class MobileNetV2(nn.Sequential):
-    '''
+    """
     mobile net backbone as feature extractor
     width_mult: to obtain more channels (thus more representative)
-    '''
+    """
 
     def __init__(self, width_mult=1, used_layers=[3, 5, 7]):
         super(MobileNetV2, self).__init__()
@@ -173,9 +173,9 @@ class MobileNetV2(nn.Sequential):
 
 
 class ResNet(nn.Module):
-    '''
+    """
     resnet with dilated-conv
-    '''
+    """
 
     def __init__(self, block, layers, used_layers):
         self.inplanes = 64
@@ -263,24 +263,24 @@ class ResNet(nn.Module):
 
 
 def ResNet18(**kwargs):
-    ''' resnet-18 model '''
+    """ resnet-18 model """
     model = ResNet(Residual_Block, [2, 2, 2, 2], **kwargs)
     return model
 
 
 def ResNet34(**kwargs):
-    ''' resnet-34 model '''
+    """ resnet-34 model """
     model = ResNet(Residual_Block, [3, 4, 6, 3], **kwargs)
     return model
 
 
 def ResNet50(**kwargs):
-    ''' resnet-50 model '''
+    """ resnet-50 model """
     model = ResNet(Bottleneck, [3, 4, 6, 3], **kwargs)
     return model
 
 
-''' Residual block '''
+""" Residual block """
 
 
 class Residual_Block(nn.Module):
@@ -331,9 +331,9 @@ class Residual_Block(nn.Module):
 
 
 class InvertedResidual(nn.Module):
-    '''
+    """
     inverted residual blocks for mobile net v2
-    '''
+    """
 
     def __init__(self, in_channels, out_channels, stride, expand_ratio, dilation=1):
         super(InvertedResidual, self).__init__()
@@ -411,9 +411,9 @@ class Bottleneck(nn.Module):
 
 
 class DepthwiseXCorr(nn.Module):
-    '''
+    """
     perform cross-relation (as conv) with one feature map (as kernel) on the other (as search)
-    '''
+    """
 
     def __init__(self, in_channels, hidden, out_channels, kernel_size=3, hidden_kernel_size=5):
         super(DepthwiseXCorr, self).__init__()
@@ -442,7 +442,7 @@ class DepthwiseXCorr(nn.Module):
         return out
 
 
-''' RPN block '''
+""" RPN block """
 
 
 class RPN(nn.Module):
@@ -485,9 +485,9 @@ class UPChannelRPN(RPN):
 
 
 class DepthwiseRPN(RPN):
-    '''
+    """
     perform depth-wise cross-correlation to obtain both classification & regression branch
-    '''
+    """
     def __init__(self, anchor_num=5, in_channels=256, out_channels=256):
         super(DepthwiseRPN, self).__init__()
         self.cls = DepthwiseXCorr(in_channels, out_channels, 2 * anchor_num)  # classification branch

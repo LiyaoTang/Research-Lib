@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 # coding: utf-8
-'''
+"""
 construct model for points cloud input based ob sklearn
-'''
+"""
 
 import sys
 root_dir = '../../'
@@ -20,7 +20,7 @@ import Data_Feeder as feeder
 import Metric_Recorder as recorder
 from optparse import OptionParser
 
-''' parsing args '''
+""" parsing args """
 
 parser = OptionParser()
 parser.add_option('--name', dest='model_name')
@@ -99,7 +99,7 @@ if options.log_dir:
     log_file = open(log_file_path, 'w')
     sys.stdout = log_file
 
-''' constructing dataset '''
+""" constructing dataset """
 
 train_set = feeder.Front_Radar_Points_from_txt_Gen_Feeder(path_train_set, class_num=class_num, norm_type=norm_type,
                                                           use_onehot=False, weighted=weighted_loss)
@@ -117,11 +117,11 @@ val_input, val_label = val_set.get_all_data(allowed=True)
 val_input = np.vstack(val_input)
 val_label = np.concatenate(val_label)
 
-''' constructing model '''
+""" constructing model """
 
 rand_forest = sken.RandomForestClassifier(tree_num)
 
-''' training & monitoring '''
+""" training & monitoring """
 
 # fit model
 rand_forest.fit(train_input, train_label)

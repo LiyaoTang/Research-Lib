@@ -1,12 +1,12 @@
 #!/usr/bin/env python
 # coding: utf-8
-'''
+"""
 module: utilities for parsing protobuf without proto-header, able to:
     parse proto txt into tree-like structure
     select specified nodes
     write back to proto txt
         => able to modify batch of prototxt by programing
-'''
+"""
 
 class Node():
     def __init__(self, name=None, parent=None, comment=None):
@@ -72,9 +72,9 @@ class Node():
         return cpy
     
     def to_file(self, path=None):
-        '''
+        """
         revert back into proto txt
-        '''
+        """
         lines = []
         prefix=''
         def _add_node(h, prefix):
@@ -115,9 +115,9 @@ class Node():
         return stream
 
     def read_file(self, path, comment='#'):
-        '''
+        """
         read protobuf, any line containing "#" (default choice) would be treated as comment
-        '''
+        """
         f = open(path, 'r').read()
         f = [l for l in f.split('\n')]
         h = self

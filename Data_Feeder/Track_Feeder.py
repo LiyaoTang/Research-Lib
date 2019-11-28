@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 # coding: utf-8
-'''
+"""
 module: data pipeline for tracking
-'''
+"""
 
 import os
 import sys
@@ -20,7 +20,7 @@ __all__ = (
 
 
 class Track_Feeder(Feeder):
-    '''
+    """
     feeder to read prepared tracking dataset (e.g. ImageNet VID)
     reference mapping: a ref -> a track (a series of img with one or more object)
     original reference format: [[video_id, frame_id, track_id(obj), class_id, img_h, img_w, xmin, ymin, xmax, ymax]...],
@@ -30,7 +30,7 @@ class Track_Feeder(Feeder):
         convert label type (xyxy, xywh)
         encoding bbox onto single img (crop, mask, mesh)
     note: xy-min/max are in window coord => x indexing col & y indexing row
-    '''
+    """
 
     def __init__(self, data_ref_path, config={}):
         super(Track_Feeder, self).__init__(data_ref_path, class_num=0, class_name=None, use_onehot=True, config=config)
@@ -79,9 +79,9 @@ class Track_Feeder(Feeder):
             self._original_refs = refs
 
     def reset(self):
-        '''
+        """
         reconstruct feeder accordingly
-        '''
+        """
         raise NotImplementedError
 
     def _get_img(self, ref):  # original ref
@@ -173,11 +173,11 @@ class Track_Feeder(Feeder):
 
 
 class Track_Re3_Feeder(Track_Feeder):
-    '''
+    """
     feeder for re3 tracker
     original reference format: [[video_id, frame_id, track_id, class_id, img_h, img_w, xmin, ymin, xmax, ymax]...],
         where video_dir=video_id, img_name=frame_id => img_path=os.path.join(video_id, frame_id)    
-    '''
+    """
 
     def __init__(self, data_ref_path, num_unrolls=None, batch_size=None, img_lib='cv2', config={}):
         config['img_lib'] = img_lib
@@ -202,9 +202,9 @@ class Track_Re3_Feeder(Track_Feeder):
             self.reset(num_unrolls, batch_size)
 
     def reset(self, num_unrolls=None, batch_size=None):
-        '''
+        """
         reconstruct feeder according to specified num_unrolls
-        '''
+        """
         if self.num_unrolls != num_unrolls and num_unrolls is not None:
             self.num_unrolls = num_unrolls
         if self.batch_size != batch_size and batch_size is not None:
@@ -340,10 +340,10 @@ class Track_Re3_Feeder(Track_Feeder):
         return input_seq, label_seq
 
     def iterate_track(self):
-        '''
+        """
         iterate over all tracks in dataset as (input_seq, label_seq)
         Warning: should not be used if feeder is currently wrapped by parallel feeder (as feeder states modified)
-        '''
+        """
         _use_inference_prob = self.config['use_inference_prob']
         _num_unrolls = self.num_unrolls
 
@@ -364,13 +364,13 @@ class Track_Re3_Feeder(Track_Feeder):
 
 
 class Track_Siam_Feeder(Track_Feeder):
-    '''
+    """
     feeder for siam tracker (e.g. siam fc, siam rpn)
     original reference format: [[video_id, frame_id, track_id, class_id, img_h, img_w, xmin, ymin, xmax, ymax]...],
         where video_dir=video_id, img_name=frame_id => img_path=os.path.join(video_id, frame_id)    
     frame_range: given frame idx of template(z), compose a positive example with search(x) drawn inside idx+/-frame_range 
     pos_num: the least num/ratio of positive z-x pair inside a batch
-    '''
+    """
 
     def __init__(self, data_ref_path, frame_range=None, pos_num=0.8, batch_size=None, config={}):
         config['img_lib'] = 'cv2'
@@ -398,9 +398,9 @@ class Track_Siam_Feeder(Track_Feeder):
             self.reset(frame_range, pos_num, batch_size)
 
     def reset(self, frame_range=None, pos_num=None, batch_size=None):
-        '''
+        """
         reconstruct feeder according to specified frame_range & batch_size
-        '''
+        """
         if self.frame_range != frame_range and frame_range is not None:
             self.frame_range = frame_range
         if self.batch_size != batch_size and batch_size is not None:
@@ -514,9 +514,9 @@ class Track_Siam_Feeder(Track_Feeder):
         return patch, box
 
     def iterate_track(self):
-        '''
+        """
         iterate over all tracks in dataset as (template, search imgs, labels)
-        '''
+        """
         for ref_list in self.ref_dict.values():
             track_input, track_label = [], []
             for start_idx, end_idx in ref_list:  # a track

@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 # coding: utf-8
-'''
+"""
 module: given onnx model, convert to tensorRT model for deployment
-'''
+"""
 
 from __future__ import division  # ensure accurate division (auto-convert to float point)
 

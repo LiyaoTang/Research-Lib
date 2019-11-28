@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 # coding: utf-8
-'''
+"""
 module: some self-constructed tf ops
-'''
+"""
 
 import os
 import numpy as np
@@ -14,7 +14,7 @@ from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import gen_nn_ops
 
 
-''' reshaping '''
+""" reshaping """
 
 
 def remove_axis_get_shape(curr_shape, axis):
@@ -36,7 +36,7 @@ def remove_axis(input, axis):
     return tf.reshape(input, tf.stack(new_shape))
 
 
-''' activation '''
+""" activation """
 
 
 def leaky_relu(input, slope=0.01, name='lrelu'):
@@ -53,14 +53,14 @@ def prelu(input, weights=None, initializer=tf.constant_initializer(0.25), name='
         return tf.nn.relu(input) - weights * tf.nn.relu(-input)
 
 
-''' pooling '''
+""" pooling """
 
 
 def unpooling(input, before_pool, padding, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], name=None, data_format="NHWC"):
-    '''
+    """
     apply unpooling given the corresponding pooling op
     by using the gradient of pooling op
-    '''
+    """
     raise PermissionError('not permitted to use: not tested yet')
     unpool = gen_nn_ops._max_pool_grad(orig_input=before_pool,
                                        orig_output=input,
@@ -74,13 +74,13 @@ def unpooling(input, before_pool, padding, ksize=[1, 2, 2, 1], strides=[1, 2, 2,
 
 
 def max_unpooling(input, factor, scope='max_unpooling'):
-    '''
+    """
     N-dimensional version of the unpooling operation from
     https://www.robots.ox.ac.uk/~vgg/rg/papers/Dosovitskiy_Learning_to_Generate_2015_CVPR_paper.pdf
 
     input: A Tensor of shape [batch, d0, d1...dn, channel]
     return: A Tensor of shape [batch, factor*d0, factor*d1...factor*dn, channel]
-    '''
+    """
     with tf.variable_scope(scope) as sc:
         shape = input.get_shape().as_list()
         dim = len(shape[1:-1])
@@ -93,13 +93,13 @@ def max_unpooling(input, factor, scope='max_unpooling'):
 
 
 def average_unpooling(input, factor, scope='average_unpooling'):
-    '''
+    """
     N-dimensional version of the unpooling operation from
     https://www.robots.ox.ac.uk/~vgg/rg/papers/Dosovitskiy_Learning_to_Generate_2015_CVPR_paper.pdf
 
     input: A Tensor of shape [batch, d0, d1...dn, channel]
     return: A Tensor of shape [batch, factor*d0, factor*d1...factor*dn, channel]
-    '''
+    """
     with tf.variable_scope(scope) as sc:
         shape = input.get_shape().as_list()
         dim = len(shape[1:-1])
@@ -166,13 +166,13 @@ def spatial_pyramid_pooling(input, bin_dimensions, pooling_mode='max', scope='sp
     return concat[0]
 
 
-''' operation '''
+""" operation """
 
 
 def calc_pad(input_shape, kernel_shape, stride, dilation, mode='SAME'):
-    '''
+    """
     TODO: calc padding offset at each side for SAME padding
-    '''
+    """
     raise NotImplementedError
     assert mode in ['SAME']
     assert dilation == 0, 'dialation not implemented yet'
@@ -184,10 +184,10 @@ def calc_pad(input_shape, kernel_shape, stride, dilation, mode='SAME'):
 
 
 def conv(input, kernel, biases, stride_w, stride_h, padding, num_groups=1):
-    '''
+    """
     Creates convolutional layers supporting the "group" parameter
     From https://github.com/ethereon/caffe-tensorflow
-    '''
+    """
     def convolve(i, k): return tf.nn.conv2d(i, k, [1, stride_h, stride_w, 1], padding=padding)
     if num_groups == 1:
         conv = convolve(input, kernel)
@@ -226,9 +226,9 @@ def dense_layer(input, num_channels, activation=tf.nn.relu, weights_initializer=
 
 def conv_layer(input, out_channels, filter_size, stride=1, num_groups=1, padding='VALID', scope=None,
                activation=tf.nn.relu, weights_initializer=None, bias_initializer=None, return_vars=False):
-    '''
+    """
     num_group: split feature map & an independent kernel+bias for each split
-    '''
+    """
     if type(filter_size) == int:
         filter_width = filter_size
         filter_height = filter_size
@@ -270,7 +270,7 @@ def conv_layer(input, out_channels, filter_size, stride=1, num_groups=1, padding
     return rtn[0] if len(rtn) == 1 else rtn
 
 def rnn_gru_layer(input, rnn_size, batch_size, num_unrolls, bi_direct=False):
-    '''
+    """
     TF 2.0:
     cell = MinimalRNNCell(32)
     x = keras.Input((None, 5))
@@ -279,7 +279,7 @@ def rnn_gru_layer(input, rnn_size, batch_size, num_unrolls, bi_direct=False):
 
     # Here's how to use the cell to build a stacked RNN:
     cells = [MinimalRNNCell(32), MinimalRNNCell(64)]
-    '''
+    """
     # prepare
     if rnn_size is int:
         rnn_size = [rnn_size]
@@ -306,7 +306,7 @@ def rnn_gru_layer(input, rnn_size, batch_size, num_unrolls, bi_direct=False):
     return cell_output, last_state
 
 
-''' loss '''
+""" loss """
 
 
 def l2_regularization(coef=5e-4, var_list=None, scope='l2_regulariazation'):
@@ -317,13 +317,13 @@ def l2_regularization(coef=5e-4, var_list=None, scope='l2_regulariazation'):
     return penalty
 
 
-''' save & restore '''
+""" save & restore """
 
 
 def restore(session, save_file, restore_vars={}, raise_if_not_found=False, verbose=True):
-    '''
+    """
     restore_vars: the dict for tf saver.restore => a dict {name in ckpt : var in current graph}
-    '''
+    """
     if not os.path.exists(save_file) and raise_if_not_found:
         raise Exception('File %s not found' % save_file)
     # load stored model
@@ -367,7 +367,7 @@ def restore(session, save_file, restore_vars={}, raise_if_not_found=False, verbo
     if restore_vars:
         saver = tf.train.Saver(restore_vars)
         saver.restore(session, save_file)
-    '''
+    """
     if len(restored_var_new_shape) > 0:
         print('trying to restore misshapen variables')
         assign_ops = []
@@ -380,7 +380,7 @@ def restore(session, save_file, restore_vars={}, raise_if_not_found=False, verbo
             assign_ops.append(tf.assign(kk, new_arr))
         session.run(assign_ops)
         print('Copying unmatched weights done')
-    '''
+    """
     print('Restored %s' % save_file)
     try:
         start_iter = int(save_file.split('-')[-1])  # get global_step
@@ -406,13 +406,13 @@ def restore_from_dir(sess, folder_path, raise_if_not_found=False):
     return start_iter
 
 
-''' scope '''
+""" scope """
 
 
 class empty_scope():
-    '''
+    """
     empty py scope for 'with' statement
-    '''
+    """
     def __init__(self):
         pass
     def __enter__(self):
@@ -424,21 +424,21 @@ def var_scope(scope):  # guarding for valid tf scope
     return tf.variable_scope(scope) if scope else empty_scope()
 
 
-''' session '''
+""" session """
 
 
 def Session():
     return tf.Session(config=tf.ConfigProto(gpu_options=tf.GPUOptions(allow_growth=True), allow_soft_placement=True))
 
 
-''' summary '''
+""" summary """
 
 
 def kernel_to_image(data, padsize=1, padval=0):
-    '''
+    """
     turns a convolutional kernel into an image of nicely tiled filters, assume kernel has in_channel=3
     useful for visualization purposes
-    '''
+    """
     if len(data.get_shape().as_list()) > 4:
         data = tf.squeeze(data)  # remove dimension for batch
     data = tf.transpose(data, (3, 0, 1, 2)) # filter num = out_channel, each filter takes in a patch of [w,h,in_channel]

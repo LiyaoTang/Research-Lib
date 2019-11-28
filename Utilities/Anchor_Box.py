@@ -1,14 +1,14 @@
 #!/usr/bin/env python
 # coding: utf-8
-'''
+"""
 module: utilities for anchor box processing, including:
     anchor box generation
-'''
+"""
 
 import numpy as np
 
 class Anchor_Box(object):
-    '''
+    """
     generate anchor boxes based on 
         stride: predefined anchor size=stride^2 => each anchor mapped back to stride*stride region on input
                 => network downsample rate
@@ -18,7 +18,7 @@ class Anchor_Box(object):
         img_center: model input image center
         channel_order: NHWC for tf, NCHW for pytorch/cuDNN
     => prepare for output volume = [size, size, anchor_num*4],
-    '''
+    """
 
     def __init__(self, stride, ratios, scales, img_center=0, size=0, channel_order='CHW',
                  iou_thr=(0.3, 0.6), pos_num=16, neg_num=16, total_num=64):
@@ -66,11 +66,11 @@ class Anchor_Box(object):
                 cnt += 1
 
     # def generate_anchors_volume(self, img_center, size):
-    #     '''
+    #     """
     #     img_center: model input image center
     #     size: model output volumn size
     #     => prepare anchors for a (newly) given input-output pair
-    #     '''
+    #     """
     #     if self.img_center == img_center and self.size == size:
     #         return self.anchors_volume
     #     self.img_center = img_center
@@ -115,11 +115,11 @@ class Anchor_Box(object):
     #     return self.anchors_volume
 
     def generate_anchors_volume(self, size, img_center=(0,0)):
-        '''
+        """
         img_center: model input image center, default to (0,0) for shifting afterwards
         size: model output volumn size
         => prepare anchors for a (newly) given input-output pair
-        '''
+        """
         if self.img_center == img_center and self.size == size:
             return self.anchors_volume
         self.img_center = img_center
@@ -154,10 +154,10 @@ class Anchor_Box(object):
         return tuple(p[slt] for p in position), keep_num
 
     def anchor_target(self, target, img_center, size, neg=False):
-        '''
+        """
         generate anchors for given target (label bbox)
         size: output volume size
-        '''
+        """
         anchor_num = self.anchor_num
 
         # -1 for ignore; 0 for negative; 1 for positive
@@ -216,10 +216,10 @@ class Anchor_Box(object):
 
 
     def decode_bbox(self, pred, img_center, size):
-        '''
+        """
         assume bbox prediction are based on current anchors
         bbox: xywh prediction in CHW/HWC order
-        '''
+        """
         anchor_center = self.generate_anchors_volume(size, img_center)
         cx, cy, w, h = self._decompose_box(anchor_center)
         x1, y1, x2, y2 = xywh_to_xyxy(cx, cy, w, h)
