@@ -7,6 +7,7 @@ module: base class for feeding data
 import os
 import re
 import sys
+import pathlib  # 
 import numpy as np
 
 

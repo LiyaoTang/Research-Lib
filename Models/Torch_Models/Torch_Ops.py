@@ -153,3 +153,35 @@ def data_parallel(module, input, device_ids, output_device=None):
     replicas = replicas[:len(inputs)]  # guard against batch_size < gpu_num
     outputs = nn.parallel.parallel_apply(replicas, inputs)  # start parallel compute
     return nn.parallel.gather(outputs, output_device)  # gather the output (concat back into together in first-dim)
+
+def ring_allreduce(send, recv):
+    """ 
+    a ring-allreduce with addition:
+        send: local tensor to send
+        recv: local buffer to receive
+    could use torch.chunk to further utilize communication bandwidth (divide tensor into chunks)
+    """
+    rank = dist.get_rank()
+    size = dist.get_world_size()
+    send_buff = torch.zeros(send.size())
+    recv_buff = torch.zeros(send.size())
+    accum = torch.zeros(send.size())
+    accum[:] = send[:]
+
+    # determine the neighbore to: recv from left & send to right
+    left = ((rank - 1) + size) % size
+    right = (rank + 1) % size
+
+    for i in range(size - 1): # need to send & recv for N-1 times (N = world size = usually, gpu num)
+        if i % 2 == 0:
+            # Send send_buff
+            send_req = dist.isend(send_buff, right)
+            dist.recv(recv_buff, left)
+            accum[:] += recv[:]
+        else:
+            # Send recv_buff
+            send_req = dist.isend(recv_buff, right)
+            dist.recv(send_buff, left)
+            accum[:] += send[:]
+        send_req.wait() # wait till send() finish (isend to postpone blocking)
+    recv[:] = accum[:]
