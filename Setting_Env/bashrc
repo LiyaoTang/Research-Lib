@@ -1,11 +1,10 @@
 # terminal
 PS1="\[\e[32;1m\]tangliyao-PC\[\e[0m\]:\[\e[34;1m\]\w\[\e[0m\]\$ "
 
-# cuda
+# cuda (pytorch offically not support 10.2)
 export PATH=$PATH:/usr/local/cuda/bin
-export PATH=$PATH:/usr/local/cuda/NsightCompute-2019.3
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/cuda/lib64/
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/cuda/extras/CUPTI/lib64
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/cuda/lib64
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/cuda/extras/CUPTI/lib64 # for libCUPTI.so (cuda-10.1)
 
 # tensorRT (easier to use tar installation)
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/home/tangliyao/TensorRT-5.1.5.0.lib
@@ -14,13 +13,13 @@ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/home/tangliyao/TensorRT-5.1.5.0.lib
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/include/libtorch # absolute path to folder libtroch
 
 # qt
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/home/tangliyao/Qt5.13.0/5.13.0/gcc_64/
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/home/tangliyao/Qt5.13.0/5.13.0/gcc_64/bin/
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/home/tangliyao/Qt5.13.0/5.13.0/gcc_64/lib/
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/home/tangliyao/.local/lib/python3.6/site-packages/PyQt5/
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/home/tangliyao/Qt5.13.2/5.13.2/gcc_64
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/home/tangliyao/Qt5.13.2/5.13.2/gcc_64/bin
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/home/tangliyao/Qt5.13.2/5.13.2/gcc_64/lib
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/home/tangliyao/.local/lib/python3.6/site-packages/PyQt5
 
 # general & common (as the last resort)
 export PATH=$PATH:$HOME/bin
-export PATH=$PATH:$HOME/.local/bin/
+export PATH=$PATH:$HOME/.local/bin
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/lib
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu/
