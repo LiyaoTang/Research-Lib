@@ -249,6 +249,8 @@ function install_python() {
         python -m pip install --upgrade pip
         python -m pip install setuptools
     fi
+    echo -e "install python pkgs"
+    sudo apt-get install python3-dev python${py_ver}-dev build-essential
     echo -e "${green_start}installing from ./requirement_py.txt${green_end}"
     python -m pip install -r ./requirement_py.txt
 
@@ -435,6 +437,7 @@ function install_general() { # install general apt pkgs
             libpcap-dev
             vim
             libglib2.0-bin
+            htop
         )
 
         # update
