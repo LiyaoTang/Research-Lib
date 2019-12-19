@@ -9,9 +9,7 @@ set -e # exit as soon as any error occur
 function help_content() {
     echo "Useage: ./install_env.sh -pi [OPTARG]
         -p  --path      the path to extracted folder for packages of install source
-        -i  --install   followed by items to be installed, currently available:
-
-    "
+        -i  --install   followed by items to be installed"
 }
 
 function exit_script() {
@@ -37,6 +35,11 @@ function select_items() {
     local items_arr=$1
     local default=0
     local i
+    
+    if [[ ${#items_arr[@]} -le 0 ]]; then
+        exit_script "no available items to be selected, abort"
+    fi
+
     echo -e "select from:"
     for (( i=0; i<${#items_arr[@]}; ++i )); do
         echo -e "${i}.\t${items_arr[${i}]}"
@@ -99,10 +102,84 @@ function install_typora() {
     sudo apt-get install typora -y
 }
 
+function install_latex() {
+    local cfg_dir="${HOME}/.config/texstudio"
+    local zip_n="texstudio-config"
+
+    echo -e "${green_start}adding ppa for texstudio${green_end}"
+    sudo add-apt-repository ppa:sunderme/texstudio
+    sudo apt-get update
+
+    sudo apt install texlive-full
+    sudo apt-get install texstudio -y
+
+    read_ynflag "copy the texstudio config to $cfg_dir? (may overwrite current config) [y/n]"
+    if [ $YN_FLAG == "y" ]; then
+        if [ -d $cfg_dir ]; then
+            rm -rf $cfg_dir
+        fi
+        mkdir -p ${cfg_dir}
+        unzip ${zip_n} -d ${cfg_dir}
+        mv ${cfg_dir}/${zip_n}/* ${cfg_dir}/
+        rm -r ${cfg_dir}/${zip_n}
+        echo -e "${green_start}complete texstudio setup${green_end}"
+    else
+        echo -e "${red_start}texstudio setup NOT complete: need manually copy setup file to ${cfg_dir}${red_end}"
+    fi
+}
+
+function install_netease_cloud() {
+    local netease_pkg=`ls ${PKG_PATH} | grep -i netease-cloud-music.*\.dep`
+
+    read_ynflag "is qt5 installed? [y/n]"
+    if [ $YN_FLAG == "n" ]; then
+        exit_script "need to install qt5 first, via option -i qt, abort"
+    fi
+
+    select_items $netease_pkg
+    netease_pkg=${PKG_PATH}/${SELECTED}
+    sudo dpkg -i $netease_pkg
+}
+
+function install_pinyin() {
+    echo -e "${green_start}install fcitx${green_end}"
+    sudo apt install fcitx -y
+    read_ynflag "need to config im-config to use \"fcitx\" as input method configuration, confirm [y/n]"
+    `im-config`
+    echo -e "${green_start}install google pinyin${green_end}"
+    sudo apt install fcitx-googlepinyin -y
+
+    echo -en "${red_start}need to find google pinyin in fcitx after reboot...${red_end}"
+    reboot_with_confirm
+}
+
+function install_utils() {
+    local pkg_list=("typora" "latex" "netease_cloud" "pinyin")
+    for pkg in ${pkg_list[@]}; do
+        read_ynflag "install ${pkg} [y/n] ? "
+        if [ $YN_FLAG == "y" ]; then
+            $"install_${pkg}"
+        fi
+    done
+}
+
+function install_personal_env() {
+    # change default folder view
+    gsetting set org.gnome.nautilus.preferences default-folder-view 'list-view'
+    # append .bashrc
+    cat ./bashrc >> ${HOME}/.bashrc
+    # config git
+    git config --global user.email beihaifusang@gmail.com
+    git config --global user.name beihaifusang
+    # install gnome
+    sudo apt-get install ubuntu-gnome-desktop -y
+    reboot_with_confirm
+}
+
 function install_python() {
     read_ynflag "${red_start}has python 3.x installed [y/n]?${red_end}"
     local py_ver="3.6"
-    if [ "${YN_FLAG}" == "n" ]; then
+    if [ $YN_FLAG == "n" ]; then
         read_ynflag "${red_start}install python via apt-get [y/n] ?${red_end}"
         if [ "${YN_FLAG}" == "y" ]; then
             echo -ne "desired python version: (default to 3.6)"
@@ -414,17 +491,32 @@ while true; do
                     qt)
                         install_qt
                         ;;
+                    pinyin)
+                        install_pinyin
+                        ;;
+                    personal_env)
+                        install_personal_env
+                        ;;
                     general)
                         install_general
                         ;;
+                    utils)
+                        install_utils
+                        ;;
+                    tex)
+                        install_latex
+                        ;;
                     all)
-                        list=("general" "python" "typora" "qt" "nvidia" "cuda" "cudnn")
-                        for pkg in ${list[@]}; do
+                        pkg_list=("general" "python" "qt" "utils" "nvidia" "cuda" "cudnn" "personal_env")
+                        for pkg in ${pkg_list[@]}; do
                             read_ynflag "install ${pkg} [y/n] ? "
                             if [ $YN_FLAG == "y" ]; then
                                 $"install_${pkg}"
                             fi
                         done
+                        ;;
+                    --)
+                        break
                         ;;
                     *)
                     help_content
@@ -432,7 +524,6 @@ while true; do
                     ;;
                 esac
             done
-            a=$(( ${#list[@]} + 1 ))
             shift $(( ${#list[@]} + 1 ))
             ;;
         --)
