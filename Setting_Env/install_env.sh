@@ -131,7 +131,7 @@ function install_latex() {
             rm -rf $cfg_dir
         fi
         mkdir -p ${cfg_dir}
-        mv ./config/texstudio/* ${cfg_dir}/
+        cp -r ./config/texstudio/* ${cfg_dir}/
         echo -e "${green_start}complete texstudio setup${green_end}"
     else
         echo -e "${red_start}texstudio setup NOT complete: need manually copy setup file to ${cfg_dir}${red_end}"
