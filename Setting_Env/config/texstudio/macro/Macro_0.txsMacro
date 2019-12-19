@@ -1,0 +1,16 @@
+{
+    "abbrev": "",
+    "description": [
+        ""
+    ],
+    "formatVersion": 1,
+    "menu": "",
+    "name": "itemize",
+    "shortcut": "Ctrl+`",
+    "tag": [
+        "\\begin{itemize}",
+        "\\item %|",
+        "\\end{itemize}"
+    ],
+    "trigger": ""
+}

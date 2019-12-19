@@ -30,6 +30,19 @@ function read_ynflag() {
     done
 }
 
+RST=""
+function read_with_default() {
+    local msg=$1
+    local default=$2
+    local tmp
+    RST=$default
+    echo -ne "${msg} (default to ${default}) "
+    read tmp
+    if [ $tmp != "" ]; then
+        RST=$tmp
+    fi
+}
+
 SELECTED="" # global var as return value
 function select_items() {
     local items_arr=$1
@@ -46,7 +59,7 @@ function select_items() {
     done
     echo -ne "(default to ${default}. ${items_arr[${default}]})"
     read default
-    while [ ${default} -ge ${i} ]; do
+    while [[ ${default} -ge ${i} ]]; do
         echo -ne "${default} is invalid, please re-enter"
         read default
     done
@@ -78,7 +91,7 @@ function check_existence() {
 }
 
 function reboot_with_confirm() {
-    read_ynflag "${red_start}reboot now [y/n]?${red_end}"
+    read_ynflag "${red_start}reboot now? [y/n]${red_end}"
     if [ "${YN_FLAG}" == "y" ]; then
         sync
         sudo reboot
@@ -91,7 +104,7 @@ function install_qt() {
     select_items $qt_path
     qt_path=${PKG_PATH}/${SELECTED}
     chmod +x $qt_path
-    $"./$qt_path"
+    $"$qt_path"
 }
 
 function install_typora() {
@@ -104,7 +117,6 @@ function install_typora() {
 
 function install_latex() {
     local cfg_dir="${HOME}/.config/texstudio"
-    local zip_n="texstudio-config"
 
     echo -e "${green_start}adding ppa for texstudio${green_end}"
     sudo add-apt-repository ppa:sunderme/texstudio
@@ -119,9 +131,7 @@ function install_latex() {
             rm -rf $cfg_dir
         fi
         mkdir -p ${cfg_dir}
-        unzip ${zip_n} -d ${cfg_dir}
-        mv ${cfg_dir}/${zip_n}/* ${cfg_dir}/
-        rm -r ${cfg_dir}/${zip_n}
+        mv ./config/texstudio/* ${cfg_dir}/
         echo -e "${green_start}complete texstudio setup${green_end}"
     else
         echo -e "${red_start}texstudio setup NOT complete: need manually copy setup file to ${cfg_dir}${red_end}"
@@ -129,7 +139,7 @@ function install_latex() {
 }
 
 function install_netease_cloud() {
-    local netease_pkg=`ls ${PKG_PATH} | grep -i netease-cloud-music.*\.dep`
+    local netease_pkg=`ls ${PKG_PATH} | grep -i netease-cloud-music.*\.deb`
 
     read_ynflag "is qt5 installed? [y/n]"
     if [ $YN_FLAG == "n" ]; then
@@ -138,7 +148,7 @@ function install_netease_cloud() {
 
     select_items $netease_pkg
     netease_pkg=${PKG_PATH}/${SELECTED}
-    sudo dpkg -i $netease_pkg
+    sudo apt install $netease_pkg # install dependencies as well
 }
 
 function install_pinyin() {
@@ -165,12 +175,20 @@ function install_utils() {
 
 function install_personal_env() {
     # change default folder view
-    gsetting set org.gnome.nautilus.preferences default-folder-view 'list-view'
+    gsettings set org.gnome.nautilus.preferences default-folder-viewer 'list-view'
     # append .bashrc
-    cat ./bashrc >> ${HOME}/.bashrc
+    cat ./bashrc >> ${HOME}/.bashrc 
+    read_ynflag "${green_start}please check ~/.bashrc to verify PATH is set correctly${green_end} [y/n]"
     # config git
     git config --global user.email beihaifusang@gmail.com
     git config --global user.name beihaifusang
+    git config --global push.default simple
+    # copy vs-code setting
+    local code_cfg=$HOMNE/.config/Code/User
+    mkdir -p $code_cfg
+    ln -s ./config/vscode/settings.json $code_cfg/settings.json
+    ln -s ./config/vscode/keybindings.json $code_cfg/keybindings.json
+
     # install gnome
     sudo apt-get install ubuntu-gnome-desktop -y
     reboot_with_confirm
@@ -179,14 +197,20 @@ function install_personal_env() {
 function install_python() {
     read_ynflag "${red_start}has python 3.x installed [y/n]?${red_end}"
     local py_ver="3.6"
-    if [ $YN_FLAG == "n" ]; then
+    local tmp
+    if [ "$YN_FLAG" == "n" ]; then
         read_ynflag "${red_start}install python via apt-get [y/n] ?${red_end}"
         if [ "${YN_FLAG}" == "y" ]; then
-            echo -ne "desired python version: (default to 3.6)"
-            read py_ver
+            echo -ne "desired python version: (default to 3.6) "
+            read tmp
+            if [ tmp != "" ]; then
+                py_ver=tmp
+            fi
             while [[ ${py_ver//.} -le 35 ]]; do
                 echo -ne "should install python>=3.6, please re-enter"
-                read py_ver
+                if [ tmp != "" ]; then
+                    py_ver=tmp
+                fi
             done
             echo -e "${green_start}installing py${py_ver}${green_end}"
             sudo apt-get install software-properties-common
@@ -198,24 +222,36 @@ function install_python() {
         fi
     fi
 
-    py_ver=`python3 -c "import sys; ver=sys.version_info; print(\"%d.%d\" % (ver[0], ver[1]))"`
-    if [[ ${py_ver//.} -le 35 ]]; then
-        exit_script "should install python>=3.6, but detected python${py_ver}, abort"
-    fi
-    echo -e "${green_start}installing from ./requirement_py.txt${green_end}"
-    python3 -m pip install -r ./requirement_py.txt
-
     read_ynflag "${red_start}has system default python changed? [y/n]${red_end}"
     if [ "${YN_FLAG}" == "y" ]; then
+        read_ynflag "using update-alternatives to manage system python version? [y/n]"
+        if [ "${YN_FLAG}" == "y" ]; then
+            setup_alternatives_python
+        fi
+        read_ynflag "using update-alternatives to manage system python ${red_start}3${red_end} version? [y/n]"
+        if [ "${YN_FLAG}" == "y" ]; then
+            setup_alternatives_python 3
+        fi
         read_ynflag "${red_start}want to link previous system python dist-packages to be executed by newly installed python? [y/n]${red_end}"
         if [ "${YN_FLAG}" == "y" ]; then
             link_sys_python_pkgs $py_ver
         fi
-        read_ynflag "${red_start}using update-alternatives to manage system python version? [y/n]${red_end}"
-        if [ "${YN_FLAG}" == "y" ]; then
-            setup_alternatives_python
-        fi
     fi
+
+    py_ver=`python -c "import sys; ver=sys.version_info; print(\"%d.%d\" % (ver[0], ver[1]))"`
+    if [[ ${py_ver//.} -le 35 ]]; then
+        exit_script "should install python>=3.6, but detected python${py_ver}, abort"
+    fi
+
+    if [ "`command -v pip3`" == "" ]; then
+        echo -e "${green_start}installing pip${green_end}"
+        sudo apt-get install python3-pip -y
+        python -m pip install --upgrade pip
+        python -m pip install setuptools
+    fi
+    echo -e "${green_start}installing from ./requirement_py.txt${green_end}"
+    python -m pip install -r ./requirement_py.txt
+
     echo -e "${green_start}python setup finished${green_end}"
     return 0
 }
@@ -232,16 +268,20 @@ function link_sys_python_pkgs(){
     for (( i=0; i<${#a[@]}; ++i )); do
         echo -e "linking ${a[i]} -> ${b[i]}"
         if [ ! -f ${b[i]} ]; then
-            ln -s "${a[i]}" "${b[i]}"
+            sudo ln -s "${a[i]}" "${b[i]}"
         fi
     done
 }
 
 function setup_alternatives_python() {
-    local sys_py=`ls /usr/bin/python[0-9].[0-9]`
-    local usr_py=`ls /usr/local/bin/python[0-9].[0-9]`
-    local env_name="python"
-    local link="/usr/local/bin/python"
+    local major=$1
+    if [ "$major" == "" ]; then
+        major="[0-9]"
+    fi
+    local sys_py=`ls /usr/bin/python${major}.[0-9]`
+    local usr_py=`ls /usr/local/bin/python${major}.[0-9]`
+    local env_name="python${1}"
+    local link="/usr/local/bin/python${1}"
     local tmp
     local i
     local base
@@ -394,6 +434,7 @@ function install_general() { # install general apt pkgs
             libdb4o-cil-dev 
             libpcap-dev
             vim
+            libglib2.0-bin
         )
 
         # update
@@ -519,9 +560,9 @@ while true; do
                         break
                         ;;
                     *)
-                    help_content
-                    exit_script
-                    ;;
+                        help_content
+                        exit_script "invalid args, abort"
+                        ;;
                 esac
             done
             shift $(( ${#list[@]} + 1 ))
