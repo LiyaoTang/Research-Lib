@@ -328,12 +328,51 @@ function append_env_var() {
     fi
 }
 
+function install_nvidia() {
+    local d_name=${PKG_PATH}/nvidia
+    local p_name=`ls ${d_name} | grep -i NVIDIA.*run` # find all .run installer
+
+    if [[ ${#p_name[@]} -le 0 ]]; then
+        exit_script "no available run-file under ${d_name}, abort"
+        return 1
+    fi
+
+    echo -e "${green_start}install nvidia driver${green_end}"
+    select_items ${p_name}
+    p_name=$SELECTED
+
+    read_ynflag "${red_start} press ctrl + alt + F1 to switch mode [y/n]?${red_end}"
+    if [ "${YN_FLAG}" != "y" ]; then
+        return 1
+    fi
+
+    # configure nouveau
+    local b_file=/etc/modprobe.d/blacklist.conf
+    if [ -z "`grep -E 'blacklist nouveau' ${b_file}`" ]; then
+        echo -e "${green_start}configure blacklist.conf${green_end}"
+        sudo bash -c "echo -e 'blacklist nouveau\noptions nouveau modeset=0' >> ${b_file}"
+        sudo update-initramfs -u # possible found missing i915 moduls (yet not important)
+        echo -en "${red_start} need to restart to finalize backlisting nouveau...${red_end}"
+        reboot_with_confirm
+    fi
+
+    sudo service lightdm stop
+    sudo ${d_name}/${p_name} -no-x-check -no-nouveau-check # dkms -no-opengl-files
+
+    reboot_with_confirm
+    return 0
+}
+
 function install_cuda() {
-    local cuda_dir=${1}/nvidia
+    local cuda_dir=${PKG_PATH}/nvidia
     local cuda_dep=`ls ${cuda_dir} | grep -i cuda-.*`
+    select_items ${cuda_dep}
+    cuda_dep=$SELECTED
 
     sudo dpkg -i ${cuda_dep}
     local cuda_ver=`ls /var/ | grep -i cuda-.*`
+    select_items ${cuda_ver}
+    cuda_ver=$SELECTED
     sudo apt-key add /var/${cuda_ver}/7fa2af80.pub
 
     # Meta Package		        Purpose
@@ -354,7 +393,7 @@ function install_cuda() {
 }
 
 function install_cudnn() {
-    local cudnn_dir=$PKG_PATH
+    local cudnn_dir=${PKG_PATH}/nvidia
     local dir_p=`find ${cudnn_dir} -type d -name "*cudnn*"` # all available dir
     select_items ${dir_p} # select a dir
     deb_list=`ls $SELECTED` # get .dep for the chosen cudnn version
@@ -451,51 +490,6 @@ function install_general() { # install general apt pkgs
     return 0
 }
 
-function install_nvidia() {
-    local d_name=$1/nvidia
-    local p_name=`ls ${d_name} | grep -i NVIDIA.*run` # find all .run installer
-
-    if [[ ${#p_name[@]} -le 0 ]]; then
-        exit_script "no available run-file under ${d_name}, abort"
-        return 1
-    fi
-
-    echo -e "${green_start}install nvidia driver${green_end}"
-    select_items ${p_name}
-    p_name=$SELECTED
-
-    read_ynflag "${red_start} press ctrl + alt + F1 to switch mode [y/n]?${red_end}"
-    if [ "${YN_FLAG}" != "y" ]; then
-        return 1
-    fi
-
-    # configure nouveau
-    local b_file=/etc/modprobe.d/blacklist.conf
-    if [ -z "`grep -E 'blacklist nouveau' ${b_file}`" ]; then
-        echo -e "${green_start}configure blacklist.conf${green_end}"
-        sudo bash -c "echo -e 'blacklist nouveau\noptions nouveau modeset=0' >> ${b_file}"
-        sudo update-initramfs -u # possible found missing i915 moduls (yet not important)
-    fi
-
-    sudo service lightdm stop
-    sudo ${d_name}/${p_name} # --dkms -no-x-check -no-nouveau-check -no-opengl-files
-
-    reboot_with_confirm
-    return 0
-}
-
-function cyclopes_env() {
-    local var=$1
-    local val=$2
-
-    create_env_file
-    if [ "`grep -E ${var} ${efile}`" == "" ]; then
-        echo -e "export ${var}=${val}" >> ${efile}
-    else
-        sed -i "s@${var}=.*@${var}=${val}@g" ${efile}
-    fi
-    return 0
-}
 
 # execute environment
 if [ $# == 0 ]; then
