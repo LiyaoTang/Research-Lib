@@ -369,7 +369,7 @@ function install_cuda() {
     select_items ${cuda_dep}
     cuda_dep=$SELECTED
 
-    sudo dpkg -i ${cuda_dep}
+    sudo dpkg -i "${cuda_dir}/${cuda_dep}"
     local cuda_ver=`ls /var/ | grep -i cuda-.*`
     select_items ${cuda_ver}
     cuda_ver=$SELECTED
@@ -503,7 +503,23 @@ fi
 ARGS=`getopt -o p:i: --long path:,install: -- "$@"`
 eval set -- "${ARGS}" # re-allocate parsed args (key-val) to $1, $2, ...
 
-PKG_PATH="./pkgs"
+PKG_PATH="./pkgs" # solve first-class citizen
+while true; do
+    case ${1} in
+        -p|--path)
+            PKG_PATH=$2
+            shift 2
+            ;;
+        --)
+            break
+            ;;
+        *)
+            shift 1
+            ;;
+    esac
+done
+
+eval set -- "${ARGS}" 
 while true; do
     case ${1} in
         -p|--path)
