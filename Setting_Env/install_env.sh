@@ -396,7 +396,8 @@ function install_cudnn() {
     local cudnn_dir=${PKG_PATH}/nvidia
     local dir_p=`find ${cudnn_dir} -type d -name "*cudnn*"` # all available dir
     select_items ${dir_p} # select a dir
-    deb_list=`ls $SELECTED` # get .dep for the chosen cudnn version
+    dir_p=$SELECTED
+    local deb_list=`ls $dir_p` # get .dep for the chosen cudnn version
     for i in ${deb_list[@]}; do # install
         sudo dpkg -i ${dir_p}/${i}
     done
@@ -507,7 +508,7 @@ PKG_PATH="./pkgs" # solve first-class citizen
 while true; do
     case ${1} in
         -p|--path)
-            PKG_PATH=$2
+            PKG_PATH=$(realpath $2)
             shift 2
             ;;
         --)
@@ -523,7 +524,6 @@ eval set -- "${ARGS}"
 while true; do
     case ${1} in
         -p|--path)
-            PKG_PATH=$2
             shift 2
             ;;
         -i|--install)
