@@ -6,6 +6,8 @@ green_start="\033[32m"
 green_end="\033[0m"
 set -e # exit as soon as any error occur
 
+CUR_DIR=$(cd `dirname $0`; pwd)
+
 function help_content() {
     echo "Useage: ./install_env.sh -pi [OPTARG]
         -p  --path      the path to extracted folder for packages of install source
@@ -132,7 +134,7 @@ function install_latex() {
             rm -rf $cfg_dir
         fi
         mkdir -p ${cfg_dir}
-        cp -r ./config/texstudio/* ${cfg_dir}/
+        cp -r $CUR_DIR/config/texstudio/* ${cfg_dir}/
         echo -e "${green_start}complete texstudio setup${green_end}"
     else
         echo -e "${red_start}texstudio setup NOT complete: need manually copy setup file to ${cfg_dir}${red_end}"
@@ -185,10 +187,14 @@ function install_personal_env() {
     git config --global user.name beihaifusang
     git config --global push.default simple
     # copy vs-code setting
-    local code_cfg=$HOMNE/.config/Code/User
+    local code_cfg=$HOME/.config/Code/User
     mkdir -p $code_cfg
-    ln -s ./config/vscode/settings.json $code_cfg/settings.json
-    ln -s ./config/vscode/keybindings.json $code_cfg/keybindings.json
+    for f in "settings.json" "keybindings.json"; do
+        if [ -f $code_cfg/$f ]; then
+            rm $code_cfg/$f
+        fi
+        ln -s $CUR_DIR/config/vscode/$f $code_cfg/$f
+    done
 
     # install gnome
     sudo apt-get install ubuntu-gnome-desktop -y
@@ -254,7 +260,7 @@ function install_python() {
     echo -e "install python pkgs"
     sudo apt-get install python3-dev python${py_ver}-dev build-essential
     echo -e "${green_start}installing from ./requirement_py.txt${green_end}"
-    python -m pip install -r ./requirement_py.txt
+    python -m pip install -r $CUR_DIR/requirement_py.txt
 
     echo -e "${green_start}python setup finished${green_end}"
     return 0
@@ -407,12 +413,14 @@ function install_cudnn() {
     local dir_p=`find ${cudnn_dir} -type d -name "*cudnn*"` # all available dir
     select_items ${dir_p} # select a dir
     dir_p=$SELECTED
-    local deb_list=`ls $dir_p/*cuda${cuda_ver}*` # get .dep for the chosen cudnn version (that matches cuda ver)
-    if [[ ${#deb_list[*]} != 3 ]]; then
+    
+    to_str_array "`ls $dir_p/*cuda${cuda_ver}*`" " " # get .dep for the chosen cudnn version (that matches cuda ver)
+    if [[ ${#STRARR[*]} != 3 ]]; then
         exit_script "please check deb files that matches cuda version ${cuda_ver}"
     fi
-    for i in ${deb_list[@]}; do # install
-        sudo dpkg -i ${dir_p}/${i}
+    for i in ${STRARR[@]}; do # install (verbose info provided by dpkg)
+        echo -e
+        sudo dpkg -i $i
     done
     reboot_with_confirm
 }
@@ -426,16 +434,16 @@ function install_torch() {
 
     if [ ${torch_src} == "ftp" ]; then
         check_network
-        rm -rf ./${torch_tar} ${torch_del}
+        rm -rf $CUR_DIR/${torch_tar} ${torch_del}
         mkdir -p ${torch_path}
 
         wget -nH ftp://${ftp_server}:${ftp_port}${ftp_path}/${torch_tar} --ftp-user=${ftp_user} --ftp-password=${ftp_passwd} -O ${torch_tar}
-        if [ -s ./${torch_tar} ]; then
-            tar xzf ./${torch_tar} -C ${torch_path}
-            rm -rf ./${torch_tar}
+        if [ -s $CUR_DIR/${torch_tar} ]; then
+            tar xzf $CUR_DIR/${torch_tar} -C ${torch_path}
+            rm -rf $CUR_DIR/${torch_tar}
         else
             echo -e "${red_start}failed to download library [${torch_tar}]${red_end}\n"
-            rm -rf ./${torch_tar}
+            rm -rf $CUR_DIR/${torch_tar}
             return 1
         fi
     else
