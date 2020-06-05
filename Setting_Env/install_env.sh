@@ -73,13 +73,14 @@ function check_network() {
     fi
 }
 
+STRARR=""
 function to_str_array() {
     local str=$1
     local delimiter=$2
     # separate string into arrays: 
     # IFS = internal field separator, a special context variable
     # <<< to redirect the string as stdin of the command
-    IFS=$delimiter read -r -a str <<< $str
+    IFS=$delimiter read -r -a STRARR <<< $str
 }
 
 function check_existence() {
@@ -203,13 +204,14 @@ function install_python() {
         if [ "${YN_FLAG}" == "y" ]; then
             echo -ne "desired python version: (default to 3.6) "
             read tmp
-            if [ tmp != "" ]; then
-                py_ver=tmp
+            if [ "$tmp" != "" ]; then
+                py_ver=$tmp
             fi
             while [[ ${py_ver//.} -le 35 ]]; do
-                echo -ne "should install python>=3.6, please re-enter"
-                if [ tmp != "" ]; then
-                    py_ver=tmp
+                echo -ne "should install python>=3.6, please re-enter "
+                read tmp
+                if [ "$tmp" != "" ]; then
+                    py_ver=$tmp
                 fi
             done
             echo -e "${green_start}installing py${py_ver}${green_end}"
@@ -357,7 +359,7 @@ function install_nvidia() {
     fi
 
     sudo service lightdm stop
-    sudo ${d_name}/${p_name} -no-x-check -no-nouveau-check # dkms -no-opengl-files
+    sudo ${d_name}/${p_name} -no-x-check -no-nouveau-check -no-opengl-files # dkms
 
     reboot_with_confirm
     return 0
@@ -393,11 +395,22 @@ function install_cuda() {
 }
 
 function install_cudnn() {
+    # fetch system cuda version
+    if [[ `which nvcc` == "" ]]; then
+        exit_script "nvcc not found, should install cuda first, abort"
+    fi
+    to_str_array "`nvcc --version`" ","
+    to_str_array "${STRARR[-2]}" " "
+    local cuda_ver=${STRARR[-1]}
+
     local cudnn_dir=${PKG_PATH}/nvidia
     local dir_p=`find ${cudnn_dir} -type d -name "*cudnn*"` # all available dir
     select_items ${dir_p} # select a dir
     dir_p=$SELECTED
-    local deb_list=`ls $dir_p` # get .dep for the chosen cudnn version
+    local deb_list=`ls $dir_p/*cuda${cuda_ver}*` # get .dep for the chosen cudnn version (that matches cuda ver)
+    if [[ ${#deb_list[*]} != 3 ]]; then
+        exit_script "please check deb files that matches cuda version ${cuda_ver}"
+    fi
     for i in ${deb_list[@]}; do # install
         sudo dpkg -i ${dir_p}/${i}
     done
