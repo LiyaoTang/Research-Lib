@@ -1,5 +1,4 @@
 {
-    "window.zoomLevel": 1,
     "files.exclude": {
         "**/__pycache__": true,
         "**/.ipynb_checkpoints": true,
@@ -9,12 +8,14 @@
         ".prototxt": "prototxt"
     },
 
+    "window.zoomLevel": 0,
+    "window.restoreWindows": "none",
     "editor.fontSize": 16,
     "editor.formatOnType": true,
     "editor.largeFileOptimizations": true,
     "editor.defaultFormatter": "himanoa.Python-autopep8",
     "explorer.confirmDragAndDrop": false,
-    "terminal.integrated.shell.linux": "/bin/bash",
+    "terminal.explorerKind": "external",
     "workbench.editor.revealIfOpen": true,
 
     "[cpp]": {
@@ -42,5 +43,4 @@
         "editor.wordWrap": "on"
     },
     "latex-workshop.view.pdf.viewer": "tab",
-    "window.restoreWindows": "none",
 }
