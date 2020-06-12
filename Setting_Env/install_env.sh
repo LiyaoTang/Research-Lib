@@ -177,8 +177,9 @@ function install_utils() {
 }
 
 function install_personal_env() {
-    # change default folder view
+    # change default folder view (need reboot to take effect)
     gsettings set org.gnome.nautilus.preferences default-folder-viewer 'list-view'
+    gsettings set org.gnome.nautilus.preferences default-sort-order 'type'
     # append .bashrc
     cat ./bashrc >> ${HOME}/.bashrc 
     read_ynflag "${green_start}please check ~/.bashrc to verify PATH is set correctly${green_end} [y/n]"

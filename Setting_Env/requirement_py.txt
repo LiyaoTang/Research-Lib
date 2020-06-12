@@ -17,3 +17,6 @@ jupyter
 
 # UI
 PyQt5
+
+# data storage
+h5py
