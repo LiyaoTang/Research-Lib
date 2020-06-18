@@ -20,3 +20,6 @@ PyQt5
 
 # data storage
 h5py
+
+# network
+lxml

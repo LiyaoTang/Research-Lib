@@ -1,5 +1,6 @@
 # terminal
 PS1="\[\e[32;1m\]tangliyao-PC\[\e[0m\]:\[\e[34;1m\]\w\[\e[0m\]\$ "
+alias ll='ls -l --group-directories-first'
 
 # cuda (pytorch offically not support 10.2)
 export PATH=$PATH:/usr/local/cuda/bin

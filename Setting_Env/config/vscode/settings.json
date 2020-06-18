@@ -16,8 +16,10 @@
     "editor.defaultFormatter": "himanoa.Python-autopep8",
     "explorer.confirmDragAndDrop": false,
     "terminal.explorerKind": "external",
+    "terminal.integrated.inheritEnv": false,
     "workbench.editor.revealIfOpen": true,
-
+    "github.gitAuthentication": false,
+    
     "[cpp]": {
         "editor.defaultFormatter": "xaver.clang-format",
     },
