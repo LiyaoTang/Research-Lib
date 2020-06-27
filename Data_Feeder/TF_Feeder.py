@@ -31,6 +31,7 @@ class TF_Feeder(object):
     def get_general_iterator(self, epoch=1, batch=1, shuffle=True, shuffle_buf=100):
         """
         get general iterator => enable to switch dataset 
+        (represents the state of iterating through a Dataset)
         """
         dataset = self.config_dataset(epoch=epoch, batch=batch, shuffle=shuffle, shuffle_buf=shuffle_buf)
         return tf.data.Iterator.from_structure(dataset.output_types, dataset.output_shapes)
