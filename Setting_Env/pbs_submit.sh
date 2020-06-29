@@ -9,7 +9,7 @@ set -e # exit as soon as any error occur
 USR="ltan9687"
 
 function help_content() {
-    echo "Useage: ./pbs_submit.sh -[sno] [OPTARG]
+    echo -e "Useage: ./pbs_submit.sh -[sno] [OPTARG]
         -s  the submit_script.sh to submit actual job
         -n  number of submit to be made
         -o  if overshoot"
@@ -21,21 +21,24 @@ function get_left_quota() {
     local used=0
 
     stat=`qstat -u ${USR}`
-    IFS=$'\n' read -rd '' -a stat <<< "${stat}"
+    if [[ "$stat" != "" ]]; then
+        IFS=$'\n' read -rd '' -a stat <<< "${stat}"
+        for str in "${stat[@]}"; do
+            local s
+            IFS=" " read -ra s <<< "$s"
+            if [[ "${s[1]}" != "${USR}" ]]; then continue; fi
 
-    for s in "${stat[@]}"; do
-        IFS=" " read -ra s <<< "$s"
-        if [[ "${s[1]}" != "${USR}" ]]; then continue; fi
-
-        job_id="${s[0]%.pbs*}"
-        job_q="${s[2]}"
-        job_stat="${s[9]}"
-        if [[ ${job_q} == "alloc-dt" ]]; then used=$(($used+1)); fi
-    done
+            job_id="${s[0]%.pbs*}"
+            job_q="${s[2]}"
+            job_stat="${s[9]}"
+            # if [[ ${job_q} == "alloc-dt" ]]; then used=$(($used+1)); fi
+            if [[ ${job_q} == "alloc-dt" ]]; then ((used++)); fi
+        done
+    fi
 
     QUOTA_LEFT=$(( ${QUOTA_MAX} - ${used} ))
-    echo "used quota = ${used}/${QUOTA_MAX}, ${QUOTA_LEFT} left"
-    if (( $used > $QUOTA_MAX )); then echo " >>>>>>> overusing gpu !!! <<<<<<<<<<< "; fi
+    echo -e "used quota = ${used}/${QUOTA_MAX}, ${QUOTA_LEFT} left"
+    if (( $used > $QUOTA_MAX )); then echo -e "${red_start} >>>>>>> overusing gpu !!! <<<<<<<<<<< ${red_end}"; fi
 }
 
 
@@ -43,13 +46,12 @@ ID_ARR_gpu=()
 ID_ARR_dt=()
 function submit_jobs() {
     get_left_quota
-    echo "submitting..."
-    
+
     for (( i=0; i<$N; i++)); do
-        if $(( $QUOTA_LEFT > 0 )); then
+        if (( $QUOTA_LEFT > 0 )); then
             ID_ARR_dt+=(`qsub -q alloc-dt $SCRIPT`)
             (( QUOTA_LEFT-- ))
-            if $(( $OVERSHOOT == 1 )); then
+            if (( $OVERSHOOT == 1 )); then
                 ID_ARR_gpu+=(`qsub $SCRIPT`)
             fi
         else
@@ -60,7 +62,9 @@ function submit_jobs() {
 
 STAT_ARR=""
 function get_submit_stat() {
-    if $(( ${#ID_ARR_gpu[@]} != $N )); then echo "${red_start}something wrong?...${red_end}"; fi
+    local job_n=$(( ${#ID_ARR_gpu[@]} + ${#ID_ARR_dt[@]} ))
+    if (( $OVERSHOOT == 1 )); then job_n=$(( $job_n - ${#ID_ARR_dt[@]} )); fi
+    if (( $job_n != $N )); then echo -e "${red_start}something wrong?...${red_end}"; fi
     local ids=("${ID_ARR_gpu[@]}" "${ID_ARR_dt[@]}")
     local stat=`qstat "${ids[@]}"`
     IFS=$'\n' read -rd '' -a STAT_ARR <<< "${stat}"
@@ -80,8 +84,9 @@ function parse_submit_stat() {
 
 function del_overshoot() {
     local cnt=0
-    while $(( $cnt < $N )); do
+    while (( $cnt < $N )); do
         get_submit_stat # cnt running jobs
+        echo -e "${STAT_ARR[@]}"
         for s in "${STAT_ARR[@]}"; do
             parse_submit_stat $s
             if [[ ${JOB_STAT} == "R" ]]; then cnt=$(($cnt+1)); fi
@@ -92,16 +97,11 @@ function del_overshoot() {
     get_submit_stat # del non-runing jobs
     for s in "${STAT_ARR[@]}"; do
         parse_submit_stat $s
-        if [[ ${JOB_STAT} == "R" ]]; then cnt=$(($cnt+1)); fi
+        if [[ ${JOB_STAT} == "R" ]]; then ((cnt++)); fi
         if [[ ${JOB_STAT} != "R" || (($cnt > $N)) ]]; then `qdel $JOB_ID`; fi
     done
 }
 
-# execute environment
-if [ $# == 0 ]; then
-    help_content
-    exit 1
-fi
 
 # -o: start listing short args
 # --long: start listing long args 
@@ -115,7 +115,7 @@ OVERSHOOT=0 # not overshooting
 while true; do
     case ${1} in
         -s)
-            SCRIPT=$(realpath $2)
+            SCRIPT=$(readlink -f $2)
             shift 2
             ;;
         -n)
@@ -135,6 +135,16 @@ while true; do
     esac
 done
 
+# execute environment
+if [[ (($# == 0)) || "$SCRIPT" == "" ]]; then
+    help_content
+    exit 1
+fi
+
+cd `dirname ${SCRIPT}`
+echo -e "submitting ${green_start}${SCRIPT}${green_end}"
 submit_jobs
-del_overshoot
-echo "${green_start}finish${green_end}"
+
+if (( $OVERSHOOT == 1)); then del_overshoot; fi
+echo -e "${green_start}finish${green_end}"
+echo -e "`qstat -u ${USR}`"
