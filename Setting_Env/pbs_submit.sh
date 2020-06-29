@@ -8,11 +8,11 @@ set -e # exit as soon as any error occur
 # global setting
 USR="ltan9687"
 
-function help_content(){
-    echo "Useage: ./arr_submit.sh -s/n [OPTARG]
+function help_content() {
+    echo "Useage: ./pbs_submit.sh -[sno] [OPTARG]
         -s  the submit_script.sh to submit actual job
-        -n  number of submit to be made"
-
+        -n  number of submit to be made
+        -o  if overshoot"
 }
 
 QUOTA_MAX=2
@@ -42,14 +42,16 @@ function get_left_quota() {
 ID_ARR_gpu=()
 ID_ARR_dt=()
 function submit_jobs() {
-    get_left_quota()
+    get_left_quota
     echo "submitting..."
     
-    for (( i=0; i<$N; i++));
+    for (( i=0; i<$N; i++)); do
         if $(( $QUOTA_LEFT > 0 )); then
             ID_ARR_dt+=(`qsub -q alloc-dt $SCRIPT`)
-            $(( QUOTA_LEFT-- ))
-            ID_ARR_gpu+=(`qsub $SCRIPT`)
+            (( QUOTA_LEFT-- ))
+            if $(( $OVERSHOOT == 1 )); then
+                ID_ARR_gpu+=(`qsub $SCRIPT`)
+            fi
         else
             ID_ARR_gpu+=(`qsub $SCRIPT`)
         fi
@@ -107,7 +109,9 @@ fi
 ARGS=`getopt -o s:n: -- "$@"`
 eval set -- "${ARGS}" # re-allocate parsed args (key-val) to $1, $2, ...
 
-N=1 # solve first-class citizen
+# solve first-class citizen (the default)
+N=1
+OVERSHOOT=0 # not overshooting
 while true; do
     case ${1} in
         -s)
@@ -117,6 +121,10 @@ while true; do
         -n)
             N=$2
             shift 2
+            ;;
+        -o)
+            OVERSHOOT=1
+            shift 1
             ;;
         --)
             break
