@@ -8,11 +8,16 @@ set -e # exit as soon as any error occur
 # global setting
 USR="ltan9687"
 
-function help_content() {
-    echo -e "Useage: ./pbs_submit.sh -[sno] [OPTARG]
-        -s  the submit_script.sh to submit actual job
-        -n  number of submit to be made
-        -o  if overshoot"
+YN_FLAG=""
+function read_ynflag() {
+    local msg=$1
+    YN_FLAG=""
+    echo -ne "$msg "
+    read YN_FLAG
+    while [[ $YN_FLAG != 'y' && $YN_FLAG != 'n' ]]; do
+        echo -ne "${msg} "
+        read YN_FLAG
+    done
 }
 
 QUOTA_MAX=2
@@ -23,8 +28,7 @@ function get_left_quota() {
     stat=`qstat -u ${USR}`
     if [[ "$stat" != "" ]]; then
         IFS=$'\n' read -rd '' -a stat <<< "${stat}"
-        for str in "${stat[@]}"; do
-            local s
+        for s in "${stat[@]}"; do
             IFS=" " read -ra s <<< "$s"
             if [[ "${s[1]}" != "${USR}" ]]; then continue; fi
 
@@ -103,10 +107,36 @@ function del_overshoot() {
 }
 
 
+function remove_previous_submit() {
+    pattern="*.o[0-9]*"
+
+    local files=`ls -l $pattern 2>/dev/null`
+    if [[ "$files" == "" ]]; then echo -e "no previous submits found"; return; fi
+
+    echo -e "found files from previous submits..."
+    echo -e "$files"
+    read_ynflag "${red_start}cleaning? [y/n]${red_end}"
+    if [ "${YN_FLAG}" == "y" ]; then
+        rm $pattern
+        echo -e "${green_start}done${green_end}"
+    else
+        echo -e "${green_start}not deleted${green_end}"
+    fi
+}
+
+
+function help_content() {
+    echo -e "Useage: ./pbs_submit.sh -[sno] [OPTARG]
+        -s  the submit_script.sh to submit actual job (will try cleaning the submit dir)
+        -n  number of submit to be made (default to 1)
+        -o  if overshoot (default no overshoot)
+        -c  the submit dir to clean (do NOT specify -c when using -s ... -c will be ignored)"
+}
+
 # -o: start listing short args
 # --long: start listing long args 
 # $@: fetch stdin string into an array
-ARGS=`getopt -o s:n: -- "$@"`
+ARGS=`getopt -o s:n:c:o -- "$@"`
 eval set -- "${ARGS}" # re-allocate parsed args (key-val) to $1, $2, ...
 
 # solve first-class citizen (the default)
@@ -116,6 +146,7 @@ while true; do
     case ${1} in
         -s)
             SCRIPT=$(readlink -f $2)
+            SCRIPT_DIR=`dirname ${SCRIPT}`
             shift 2
             ;;
         -n)
@@ -125,6 +156,14 @@ while true; do
         -o)
             OVERSHOOT=1
             shift 1
+            ;;
+        -c)
+            if [[ "$SCRIPT" == "" ]]; then 
+                SCRIPT_DIR=$2
+            else 
+                echo -e "${red_start}do NOT specify -c when using -s ... -c is ignored${red_end}"
+            fi
+            shift 2
             ;;
         --)
             break
@@ -136,15 +175,21 @@ while true; do
 done
 
 # execute environment
-if [[ (($# == 0)) || "$SCRIPT" == "" ]]; then
+if [[ "$SCRIPT_DIR" == "" ]]; then
     help_content
     exit 1
 fi
 
-cd `dirname ${SCRIPT}`
-echo -e "submitting ${green_start}${SCRIPT}${green_end}"
-submit_jobs
+cd "$SCRIPT_DIR"
+remove_previous_submit # with check
 
-if (( $OVERSHOOT == 1)); then del_overshoot; fi
-echo -e "${green_start}finish${green_end}"
+if [[ "$SCRIPT" != "" ]]; then
+    echo -e "submitting ${green_start}${SCRIPT}${green_end}"
+    submit_jobs
+
+    if (( $OVERSHOOT == 1)); then del_overshoot; fi
+    echo -e "${green_start}finish${green_end}"
+fi
+
+sleep 2
 echo -e "`qstat -u ${USR}`"
