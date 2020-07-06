@@ -67,13 +67,13 @@ class AverageMeter(object):
         self.avg = self.sum / self.count
 
 
-class Classif_Metric_Record(Metric_Record):
+class Cls_Metric_Record(Metric_Record):
     """
     base class to collect statistics for evaluation of classification model 
     """
 
     def __init__(self, class_num, class_name=None, record_prob=False, title=''):
-        super(Classif_Metric_Record, self).__init__()
+        super(Cls_Metric_Record, self).__init__()
         self.class_num = class_num
         if class_name is None:
             class_name = dict(zip(range(class_num), [str(n) for n in range(class_num)]))
@@ -308,14 +308,14 @@ class Classif_Metric_Record(Metric_Record):
         plt.close()
 
 
-class TF_Classif_Record(Classif_Metric_Record):
+class TF_Cls_Record(Cls_Metric_Record):
     """
     evaluate model given dataset.iterator & network's pred under TF framework;
     an active session will be created if not given given
     """
 
     def __init__(self, tf_pred, tf_label, tf_itr_init_op, tf_feed_dict, sess, class_num, class_name=None, record_prob=False, title=''):
-        super(TF_Classif_Record, self).__init__(class_num, class_name, record_prob, title)
+        super(TF_Cls_Record, self).__init__(class_num, class_name, record_prob, title)
 
         if sess is None:
             config = tf.ConfigProto()
@@ -351,13 +351,13 @@ class TF_Classif_Record(Classif_Metric_Record):
         self._cal_stat_on_rstrecord(self.record_prob)
 
 
-class General_Classif_Record(Classif_Metric_Record):
+class General_Cls_Record(Cls_Metric_Record):
     """
     evaluate model given an arbitrary model
     """
 
     def __init__(self, class_num, class_name=None, record_prob=False, title=''):
-        super(General_Classif_Record, self).__init__(class_num, class_name, record_prob, title)
+        super(General_Cls_Record, self).__init__(class_num, class_name, record_prob, title)
 
     def evaluate_model(self, model_func, input_label_itr, is_onehot=True, print_rst=True):
         """
@@ -377,7 +377,7 @@ class General_Classif_Record(Classif_Metric_Record):
         self._cal_stat_on_rstrecord(record_prob=True)
 
 
-class Bbox_Metric_Record(Classif_Metric_Record):
+class Bbox_Metric_Record(Cls_Metric_Record):
     """
     detection regarded as multiple classification + bbox localization
     """

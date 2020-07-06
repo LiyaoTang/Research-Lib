@@ -51,7 +51,7 @@ class Config(object):
         elif not config:
             self.config = {}
         else:
-            raise TypeError('not supported to have', repr(obj), 'as config')
+            raise TypeError('not supported to have', repr(config), 'as config')
         self.arg_cfg_map = {}  # args parser attr -> key in self.config
 
     def construct_argparser(self):
