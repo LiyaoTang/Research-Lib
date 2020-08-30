@@ -35,6 +35,44 @@ def remove_axis(input, axis):
             new_shape = remove_axis_get_shape(curr_shape, ax)
     return tf.reshape(input, tf.stack(new_shape))
 
+def reduce_label(labels, logits, ignore_labels, num_classes, is_one_hot=False):
+    """ 
+    WARNING: not validated
+    remove the ignored label & map the remaining label to range(0, num_valid)
+    Args:
+        labels & logits :   will be flatten
+        ignore_labels   :   assumed to be list-like, denoting the label idx to be ignored
+        num_classes     :   num of total classes in original k-class label
+
+    e.g. full label [0,1,2] & ignore [1] => reduce [0,2] to [0,1]
+    """
+    assert not is_one_hot, "assuming labels is NOT one-hot"
+
+    label = tf.reshape(labels, -1)
+    logits = tf.reshape(logits, (-1, num_classes))
+    if not ignore_labels:
+        return labels, logits
+
+    # boolean mask of examples to be ignored
+    ignored_bool = tf.zeros_like(labels, dtype=tf.bool)
+    for ign_label in ignore_labels:
+        ignored_bool = tf.logical_or(ignored_bool, tf.equal(labels, ign_label))
+
+    # collect logits and labels that are not ignored
+    valid_idx = tf.squeeze(tf.where(tf.logical_not(ignored_bool)))
+    valid_logits = tf.gather(logits, valid_idx, axis=0)
+    valid_labels = tf.gather(labels, valid_idx, axis=0)
+
+    # Reduce label values in the range of logit shape
+    #  => insert 0 before the ignored label s.t. shift 1 position to right
+    #  => skip the ignored one... (map to 0, but actually do not care)
+    reducing_list = tf.range(num_classes, dtype=tf.int32)
+    inserted_value = tf.zeros((1,), dtype=tf.int32)
+    for ign_label in ignore_labels:
+        reducing_list = tf.concat([reducing_list[:ign_label], inserted_value, reducing_list[ign_label:]], 0)
+    valid_labels = tf.gather(reducing_list, valid_labels)
+    return valid_labels, valid_logits
+
 
 """ activation """
 
@@ -320,10 +358,14 @@ def l2_regularization(coef=5e-4, var_list=None, scope='l2_regulariazation'):
 """ save & restore """
 
 
-def restore(session, save_file, restore_vars={}, raise_if_not_found=False, verbose=True):
+def restore(session, save_file, except_list=None, select_list=None, restore_vars=None, raise_if_not_found=False, verbose=True):
     """
     restore_vars: the dict for tf saver.restore => a dict {name in ckpt : var in current graph}
     """
+    except_list = [] if except_list is None else except_list
+    select_list = [] if select_list is None else select_list
+    restore_vars = {} if restore_vars is None else restore_vars
+
     if not os.path.exists(save_file) and raise_if_not_found:
         raise Exception('File %s not found' % save_file)
     # load stored model
@@ -337,6 +379,13 @@ def restore(session, save_file, restore_vars={}, raise_if_not_found=False, verbo
     with tf.variable_scope(tf.get_variable_scope(), reuse=tf.AUTO_REUSE):
         for var in tf.global_variables():
             op_name = var.name.split(':')[0]
+
+            # filter out wanted/unwanted ops
+            if except_list and any([bool(re.fullmatch(expr, op_name)) for expr in except_list]):
+                continue
+            if select_list and not any([bool(re.fullmatch(expr, op_name)) for expr in select_list]):
+                continue
+
             if op_name not in saved_shapes:  # not found in saved file
                 continue
             if 'global_step' in var.name:  # training op
@@ -355,7 +404,7 @@ def restore(session, save_file, restore_vars={}, raise_if_not_found=False, verbo
         v_name = v.name.split(':')[0]
         v_shape = v.get_shape().as_list()
         v_size = int(np.prod(v_shape) * 4 / 10 ** 6)
-        print('%s -> \t %s, shape %s = %dMB' % (k, v_name, str(v_shape), v_size))
+        print('%s \t -> \t %s, shape %s = %dMB' % (k, v_name, str(v_shape), v_size))
 
     ignored_var_names = sorted(list(set(saved_shapes.keys()) - restored_var_names))
     print('\n')

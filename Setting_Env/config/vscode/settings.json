@@ -10,7 +10,7 @@
 
     "window.zoomLevel": 0,
     "window.restoreWindows": "none",
-    "editor.fontSize": 16,
+    // "editor.fontSize": 16,
     "editor.formatOnType": true,
     "editor.largeFileOptimizations": true,
     "explorer.confirmDragAndDrop": false,
