@@ -1,6 +1,10 @@
 // Place your key bindings in this file to override the defaultsauto[]
 [
     {
+        "key": "shift+j",
+        "command": "editor.action.joinLines"
+    },
+    {
         "key": "ctrl+shift+t",
         "command": "workbench.action.terminal.new"
     },
