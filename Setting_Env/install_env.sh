@@ -188,6 +188,7 @@ function install_personal_env() {
     git config --global user.name beihaifusang
     git config --global push.default simple
     git config credential.helper cache # save password for 15min (in mem)
+    git config --global core.autocrlf true  # ignore line endings
     # copy vs-code setting
     local code_cfg=$HOME/.config/Code/User
     mkdir -p $code_cfg
